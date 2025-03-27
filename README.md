@@ -213,7 +213,7 @@ GOOS=windows GOARCH=amd64 go build -o aifuzz.exe
 
 
 <b> whitelist.txt【注意：放顶级域名】</b>
-#### 白名单，只对白名单内的顶级域名测试
+  白名单，只对符合白名单顶级域名内的目标测试，一定存放的事顶级域名，不然会错误。
 例如：
 <img width="114" alt="image" src="https://github.com/user-attachments/assets/248faea0-d8ab-42f1-8ae7-7c0b0caaaa4b" />
 

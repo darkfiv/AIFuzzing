@@ -1,0 +1,1752 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIFuzzing - 高级安全扫描</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        :root {
+            --primary-color: #4a90e2;
+            --secondary-color: #5cb85c;
+            --danger-color: #d9534f;
+            --warning-color: #f0ad4e;
+            --dark-color: #343a40;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            color: #333;
+            min-height: 100vh;
+            padding-bottom: 60px;
+            position: relative;
+        }
+        
+        .app-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            overflow: hidden;
+            margin-bottom: 1.5rem;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+        }
+        
+        .hero-section {
+            background: linear-gradient(120deg, var(--primary-color), #1a56cc);
+            color: white;
+            padding: 3rem 2rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .hero-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 300px;
+            height: 300px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 50%;
+            transform: translate(30%, -30%);
+        }
+        
+        .hero-section::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                linear-gradient(45deg, transparent 48%, rgba(255, 255, 255, 0.05) 50%, transparent 52%),
+                linear-gradient(-45deg, transparent 48%, rgba(255, 255, 255, 0.05) 50%, transparent 52%);
+            background-size: 30px 30px;
+            pointer-events: none;
+        }
+        
+        .hero-title {
+            font-size: 2.8rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .hero-subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            max-width: 600px;
+            margin-bottom: 2rem;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            transition: transform 0.3s ease;
+            animation: tech-pulse 2s infinite;
+            animation-delay: calc(var(--i) * 0.5s);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            font-size: 1rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-total {
+            color: var(--primary-color);
+        }
+        
+        .stat-vulnerable {
+            color: var(--danger-color);
+        }
+        
+        .stat-unknown {
+            color: var(--warning-color);
+        }
+        
+        .stat-safe {
+            color: var(--secondary-color);
+        }
+        
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+        
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--dark-color);
+            margin-bottom: 0;
+        }
+        
+        .filter-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        
+        .custom-table {
+            width: 100%;
+            table-layout: fixed;
+        }
+        
+        .custom-table th {
+            font-weight: 600;
+            color: #495057;
+            background-color: #f8f9fa;
+            padding: 0.75rem 1rem;
+            border-bottom: 2px solid #e9ecef;
+            position: relative;
+        }
+        
+        .custom-table td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e9ecef;
+            vertical-align: middle;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .custom-table tbody tr {
+            transition: background-color 0.2s;
+        }
+        
+        .custom-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .badge-vulnerable {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 0.4rem 0.6rem;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .badge-unknown {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 0.4rem 0.6rem;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .badge-safe {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 0.4rem 0.6rem;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .btn-view {
+            background: linear-gradient(135deg, #4a90e2, #3986e0);
+            color: white;
+            border: none;
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+        
+        .btn-view:hover {
+            background: linear-gradient(135deg, #3986e0, #2d6fc2);
+            transform: translateY(-2px);
+        }
+        
+        .btn-primary-custom {
+            background: linear-gradient(135deg, #4a90e2, #3986e0);
+            border: none;
+            padding: 0.6rem 1.5rem;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary-custom:hover {
+            background: linear-gradient(135deg, #3986e0, #2d6fc2);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem 0;
+        }
+        
+        .empty-state-icon {
+            font-size: 4rem;
+            color: #e9ecef;
+            margin-bottom: 1rem;
+        }
+        
+        .empty-state-text {
+            color: #6c757d;
+            font-size: 1.1rem;
+        }
+        
+        /* 详情模态框样式 */
+        .detail-modal .modal-dialog {
+            max-width: 90%;
+        }
+        
+        .modal-header {
+            background: linear-gradient(90deg, var(--primary-color), #3986e0);
+            color: white;
+            border-bottom: none;
+            padding: 1.5rem;
+        }
+        
+        .modal-body {
+            padding: 2rem;
+        }
+        
+        .detail-section {
+            margin-bottom: 20px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            background-color: #f8f9fa;
+        }
+
+        .detail-section-title {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #495057;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .comparison-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .comparison-panel {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .comparison-header {
+            background-color: #f8f9fa;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #dee2e6;
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .comparison-content {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .similarity-value {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 1.5rem 0;
+        }
+        
+        .similarity-circle {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(var(--primary-color) calc(var(--percentage) * 1%), #f1f1f1 0);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        
+        .similarity-circle::before {
+            content: '';
+            position: absolute;
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background: white;
+        }
+        
+        .similarity-text {
+            position: relative;
+            z-index: 1;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--dark-color);
+        }
+        
+        .difference-item {
+            background-color: #f8f9fa;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            margin-bottom: 0.75rem;
+            border-left: 3px solid var(--warning-color);
+        }
+        
+        /* 动画效果 */
+        @keyframes fadeIn {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease forwards;
+        }
+        
+        .loading-spinner {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+        }
+        
+        /* 修复表格内容过长的问题 */
+        .url-cell {
+            max-width: 250px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        /* 代码高亮 */
+        pre {
+            margin: 0;
+            border-radius: 0;
+            max-height: 400px;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        code {
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9rem;
+        }
+
+        /* 页脚样式 */
+        footer {
+            text-align: center;
+            padding: 1.5rem 0;
+            background: white;
+            box-shadow: 0 -3px 10px rgba(0,0,0,0.05);
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+        }
+        
+        .footer-text {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        /* 敏感数据显示样式 */
+        .sensitive-data-item {
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            border-radius: 4px;
+            padding: 4px 8px;
+            margin: 3px 0;
+            display: inline-block;
+            font-weight: 500;
+            color: #856404;
+        }
+
+        .alert-danger .mb-0 li {
+            margin-bottom: 10px;
+            padding: 8px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 4px;
+            word-break: break-all;
+        }
+
+        .alert-danger .mb-0 li strong {
+            color: #721c24;
+            font-weight: 700;
+        }
+
+        .summary-sensitive-data {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            max-width: 100%;
+        }
+
+        .badge-vulnerable {
+            background-color: #dc3545;
+            color: white;
+            font-size: 0.75em;
+            padding: 0.35em 0.65em;
+            border-radius: 0.25rem;
+            vertical-align: middle;
+        }
+
+        /* 摘要样式 */
+        .summary-container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+
+        .summary-item {
+            display: flex;
+            border-bottom: 1px dashed #dee2e6;
+            padding-bottom: 8px;
+        }
+
+        .summary-label {
+            min-width: 100px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .summary-value {
+            flex: 1;
+            word-break: break-all;
+        }
+
+        @media (min-width: 768px) {
+            .summary-container {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        /* 添加列宽调整功能 */
+        .resizable {
+            position: relative;
+        }
+        
+        .resizer {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 5px;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.05);
+            cursor: col-resize;
+            user-select: none;
+            touch-action: none;
+        }
+        
+        .resizer:hover,
+        .resizing {
+            background: rgba(74, 144, 226, 0.5);
+        }
+        
+        /* URL列默认宽度 */
+        .url-column {
+            width: 25%;
+        }
+        
+        /* 方法列默认宽度 */
+        .method-column {
+            width: 8%;
+        }
+        
+        /* 漏洞类型列默认宽度 */
+        .vuln-type-column {
+            width: 12%;
+        }
+        
+        /* 状态列默认宽度 */
+        .status-column {
+            width: 10%;
+        }
+        
+        /* 详情列默认宽度 */
+        .details-column {
+            width: 45%;
+        }
+
+        /* 漏洞类型标签样式 */
+        .badge {
+            font-size: 0.75rem;
+            padding: 0.5em 0.75em;
+            font-weight: 500;
+        }
+
+        .badge.bg-danger {
+            background-color: #dc3545 !important;
+        }
+
+        .badge.bg-warning {
+            background-color: #ffc107 !important;
+            color: #000;
+        }
+
+        .badge.bg-secondary {
+            background-color: #6c757d !important;
+        }
+
+        /* 优化复制按钮样式 */
+        .copy-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            padding: 2px 6px;
+            font-size: 0.75rem;
+            z-index: 1;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .copy-btn svg {
+            width: 12px;
+            height: 12px;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+        }
+        
+        /* 请求数据容器样式 */
+        .request-container {
+            position: relative;
+            margin-bottom: 1rem;
+        }
+        
+        .request-container pre {
+            padding-top: 30px;
+        }
+
+        /* 修改请求头显示样式 */
+        pre.language-http {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        /* 修改请求体显示样式 */
+        pre.language-json {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        /* 添加分页相关样式 */
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1.5rem;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .pagination-info {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+        }
+
+        .pagination-btn {
+            background: linear-gradient(135deg, #4a90e2, #3986e0);
+            color: white;
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 3px;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .pagination-btn:disabled {
+            background: #e9ecef;
+            color: #adb5bd;
+            cursor: not-allowed;
+        }
+
+        .pagination-btn.active {
+            background: linear-gradient(135deg, #212529, #343a40);
+            font-weight: bold;
+        }
+
+        .pagination-ellipsis {
+            margin: 0 3px;
+            color: #6c757d;
+        }
+
+        .pagination-page-size {
+            margin-left: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .pagination-page-size select {
+            margin-left: 8px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #ced4da;
+            font-size: 0.9rem;
+        }
+
+        /* 增加科技感的闪烁效果 */
+        @keyframes tech-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(74, 144, 226, 0.6); }
+            70% { box-shadow: 0 0 0 6px rgba(74, 144, 226, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(74, 144, 226, 0); }
+        }
+
+        .stat-card:nth-child(1) { --i: 0; }
+        .stat-card:nth-child(2) { --i: 1; }
+        .stat-card:nth-child(3) { --i: 2; }
+        .stat-card:nth-child(4) { --i: 3; }
+    </style>
+</head>
+<body>
+    <div class="app-container mt-4">
+        <div class="hero-section">
+            <h1 class="hero-title">AIFuzzing <span style="font-size: 1.5rem;">v1.0.0</span></h1>
+            <p class="hero-subtitle">高级API安全扫描工具，智能检测未授权访问和越权漏洞</p>
+            <button id="refreshBtn" class="btn btn-light px-4 py-2">
+                <i class="bi bi-arrow-clockwise"></i> 刷新数据
+            </button>
+            </div>
+        
+        <div class="stats-container">
+            <div class="stat-card">
+                <div class="stat-value stat-total" id="totalScanned">0</div>
+                <div class="stat-label">总扫描请求</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value stat-vulnerable" id="totalVulnerable">0</div>
+                <div class="stat-label">漏洞请求</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value stat-unknown" id="totalUnknown">0</div>
+                <div class="stat-label">未知状态</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value stat-safe" id="totalSafe">0</div>
+                <div class="stat-label">安全请求</div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <div class="table-header">
+                <h2 class="section-title">漏洞扫描结果</h2>
+                <div class="filter-controls">
+                    <select id="filterVulnType" class="form-select form-select-sm me-2" style="width: 150px;">
+                        <option value="">所有漏洞类型</option>
+                        <option value="未授权访问">未授权访问</option>
+                        <option value="越权访问">越权访问</option>
+                    </select>
+                    <select id="filterResult" class="form-select form-select-sm me-2" style="width: 150px;">
+                        <option value="">所有检测结果</option>
+                        <option value="true">存在漏洞</option>
+                        <option value="unknown">需人工确认</option>
+                        <option value="false">安全请求</option>
+                    </select>
+                    <button id="exportBtn" class="btn btn-primary-custom btn-sm">
+                        <i class="bi bi-download"></i> 导出报告
+                    </button>
+            </div>
+        </div>
+            
+            <div id="resultsTable">
+                <div class="loading-spinner">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 漏洞详情模态框 -->
+    <div class="modal fade detail-modal" id="vulnerabilityDetailModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailModalTitle">漏洞详情</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="detailModalBody">
+                    <!-- 模态框内容将通过JS动态加载 -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <footer>
+        <p class="footer-text">© 2025 AIFuzzing - 高级API安全扫描工具 | 面向未来的安全检测</p>
+    </footer>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-http.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
+    <script>
+        // 全局变量存储所有结果和分页信息
+        let allResults = [];
+        let currentPage = 1;
+        let pageSize = 10;
+        let totalPages = 0;
+        
+        // 页面加载完成后获取数据
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchData();
+            
+            // 修复刷新按钮事件绑定
+            document.getElementById('refreshBtn').addEventListener('click', function() {
+                fetchData();
+            });
+            
+            // 绑定导出按钮事件
+            document.getElementById('exportBtn').addEventListener('click', exportReport);
+            
+            // 绑定筛选事件 - 漏洞类型
+            document.getElementById('filterVulnType').addEventListener('change', applyFilters);
+            
+            // 绑定筛选事件 - 结果类型
+            document.getElementById('filterResult').addEventListener('change', applyFilters);
+            
+            // 确保模态框正确初始化
+            var vulnerabilityDetailModal = document.getElementById('vulnerabilityDetailModal');
+            if (vulnerabilityDetailModal) {
+                console.log("找到模态框元素，正在初始化...");
+                window.vulnerabilityModal = new bootstrap.Modal(vulnerabilityDetailModal);
+                console.log("模态框初始化完成");
+            } else {
+                console.error("找不到模态框元素，ID='vulnerabilityDetailModal'");
+            }
+        });
+        
+        // 获取数据
+        function fetchData() {
+            document.getElementById('resultsTable').innerHTML = `
+                <div class="loading-spinner">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                </div>
+            `;
+            
+            fetch('/data')
+                .then(response => response.json())
+                .then(data => {
+                    console.log(`获取数据成功，共 ${data.length} 条结果`);
+                    allResults = data;
+                    updateStats(data);
+                    renderResults(filterResults(data, 
+                        document.getElementById('filterVulnType').value, 
+                        document.getElementById('filterResult').value));
+                })
+                .catch(error => {
+                    console.error('获取数据失败:', error);
+                    document.getElementById('resultsTable').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⚠️</div>
+                            <div class="empty-state-text">加载数据失败，请重试</div>
+                        </div>
+                    `;
+                });
+        }
+        
+        // 更新统计数据
+        function updateStats(data) {
+            let totalVulnerable = 0;
+            let totalUnknown = 0;
+            let totalSafe = 0;
+            
+            data.forEach(item => {
+                if (item.result === "true") {
+                    totalVulnerable++;
+                } else if (item.result === "unknown") {
+                    totalUnknown++;
+                } else if (item.result === "false") {
+                    totalSafe++;
+                }
+            });
+            
+            document.getElementById('totalScanned').textContent = data.length;
+            document.getElementById('totalVulnerable').textContent = totalVulnerable;
+            document.getElementById('totalUnknown').textContent = totalUnknown;
+            document.getElementById('totalSafe').textContent = totalSafe;
+        }
+        
+        // 筛选结果函数，增加结果类型筛选
+        function filterResults(data, vulnType, resultType) {
+            let filtered = data;
+            
+            // 按漏洞类型筛选
+            if (vulnType) {
+                filtered = filtered.filter(item => {
+                    if (!item.vulnType) return false;
+                    
+                    // 标准化漏洞类型值，使其可以正确匹配
+                    const normalizedVulnType = normalizeVulnType(item.vulnType);
+                    const normalizedFilter = normalizeVulnType(vulnType);
+                    
+                    return normalizedVulnType === normalizedFilter;
+                });
+            }
+            
+            // 按结果类型筛选
+            if (resultType) {
+                filtered = filtered.filter(item => item.result === resultType);
+            }
+            
+            // 计算总页数
+            totalPages = Math.ceil(filtered.length / pageSize);
+            
+            // 检查当前页是否超出范围
+            if (currentPage > totalPages && totalPages > 0) {
+                currentPage = totalPages;
+            }
+            
+            // 返回当前页的数据
+            const startIndex = (currentPage - 1) * pageSize;
+            const paginatedData = filtered.slice(startIndex, startIndex + pageSize);
+            
+            return paginatedData;
+        }
+        
+        // 标准化漏洞类型值的辅助函数
+        function normalizeVulnType(vulnType) {
+            if (!vulnType) return '';
+            
+            // 处理不同格式的未授权访问类型
+            if (vulnType === 'unauthorized_access' || 
+                vulnType === 'VulnUnauthorizedAccess' || 
+                vulnType === '未授权访问') {
+                return '未授权访问';
+            }
+            
+            // 处理不同格式的越权访问类型
+            if (vulnType === 'privilege_escalation' || 
+                vulnType === 'VulnPrivilegeEscalation' || 
+                vulnType === '越权访问') {
+                return '越权访问';
+            }
+            
+            return vulnType;
+        }
+        
+        // 应用所有筛选条件
+        function applyFilters() {
+            const vulnType = document.getElementById('filterVulnType').value;
+            const resultType = document.getElementById('filterResult').value;
+            console.log('Applying filters:', { vulnType, resultType, currentPage, pageSize }); // 添加当前页和每页大小到日志
+            
+            // 获取筛选后的数据
+            const filteredData = filterResults(allResults, vulnType, resultType);
+            console.log('Filtered data:', filteredData.length, '条结果'); // 添加调试日志
+            
+            // 渲染结果表格
+            renderResults(filteredData);
+        }
+        
+        // 渲染结果表格
+        function renderResults(data) {
+            if (allResults.length === 0) {
+                document.getElementById('resultsTable').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📊</div>
+                        <div class="empty-state-text">暂无扫描结果</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            // 获取当前应用的筛选条件
+            const vulnType = document.getElementById('filterVulnType').value;
+            const resultType = document.getElementById('filterResult').value;
+            
+            // 获取筛选后的完整数据集（用于计算总数）
+            const totalFilteredData = allResults.filter(item => {
+                // 漏洞类型筛选
+                if (vulnType && normalizeVulnType(item.vulnType) !== normalizeVulnType(vulnType)) {
+                    return false;
+                }
+                
+                // 结果类型筛选
+                if (resultType && item.result !== resultType) {
+                    return false;
+                }
+                
+                return true;
+            });
+            
+            // 计算起始索引
+            const startIndex = (currentPage - 1) * pageSize + 1;
+            
+            let tableHTML = `
+                <table class="custom-table">
+                    <thead>
+                        <tr>
+                            <th class="resizable url-column">
+                                URL
+                                <div class="resizer" data-column="url"></div>
+                            </th>
+                            <th class="resizable method-column">
+                                方法
+                                <div class="resizer" data-column="method"></div>
+                            </th>
+                            <th class="resizable vuln-type-column">
+                                漏洞类型
+                                <div class="resizer" data-column="vuln-type"></div>
+                            </th>
+                            <th class="resizable status-column">
+                                状态
+                                <div class="resizer" data-column="status"></div>
+                            </th>
+                            <th class="resizable details-column">
+                                详情
+                                <div class="resizer" data-column="details"></div>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            // 对数据按照时间倒序排序，最新的在最前面
+            const sortedData = [...data].sort((a, b) => {
+                return new Date(b.timestamp || 0) - new Date(a.timestamp || 0);
+            });
+            
+            // 为每个结果项分配唯一的索引值作为ID
+            sortedData.forEach((item, index) => {
+                // 使用分页后的索引
+                const displayIndex = startIndex + index;
+                // 确保每个项都有ID，没有则使用索引
+                if (!item.id) {
+                    item.id = "result-" + displayIndex;
+                }
+                
+                const urlMaxLength = 50;
+                const url = item.url ? item.url : '';
+                const displayUrl = url.length > urlMaxLength ? url.substring(0, urlMaxLength) + '...' : url;
+                
+                const statusClass = item.result === "true" ? "text-danger" : 
+                                  item.result === "unknown" ? "text-warning" : "text-success";
+                
+                const statusText = item.result === "true" ? "存在漏洞" : 
+                                 item.result === "unknown" ? "需人工确认" : "安全请求";
+
+                // 确定漏洞类型标签的样式和文本
+                let vulnTypeBadge = '';
+                if (item.vulnType) {
+                    // 标准化漏洞类型值
+                    const normalizedVulnType = normalizeVulnType(item.vulnType);
+                    
+                    // 根据标准化后的值设置样式
+                    const vulnTypeClass = normalizedVulnType === "未授权访问" ? "bg-danger" : 
+                                        normalizedVulnType === "越权访问" ? "bg-warning" : "bg-secondary";
+                    
+                    // 使用标准化后的值作为显示文本
+                    vulnTypeBadge = `<span class="badge ${vulnTypeClass}">${normalizedVulnType}</span>`;
+                } else {
+                    vulnTypeBadge = '<span class="badge bg-secondary">未知</span>';
+                }
+                
+                tableHTML += `
+                    <tr data-id="${item.id}" data-url="${url}" class="result-row">
+                        <td title="${url}" class="url-cell">${displayUrl}</td>
+                        <td>${item.method || ''}</td>
+                        <td>${vulnTypeBadge}</td>
+                        <td class="${statusClass}">${statusText}</td>
+                        <td>
+                            <div class="d-flex align-items-center justify-content-between">
+                                <span class="reason-text text-truncate me-2">${item.reason || ''}</span>
+                                <button class="btn btn-sm btn-primary view-details-btn" 
+                                    data-index="${index}">
+                                    查看详情
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            tableHTML += `
+                </tbody>
+            </table>
+            <div class="pagination-container">
+                <div class="pagination-info">
+                    显示第 <span id="page-start">${startIndex}</span> 到 <span id="page-end">${Math.min(startIndex + data.length - 1, totalFilteredData.length)}</span> 条，共 <span id="total-count">${totalFilteredData.length}</span> 条结果
+                </div>
+                <div class="d-flex align-items-center">
+                    <div class="pagination-controls" id="pagination-controls">
+                        <!-- 分页按钮将通过JS动态生成 -->
+                    </div>
+                    <div class="pagination-page-size">
+                        <label for="page-size-select">每页显示:</label>
+                        <select id="page-size-select" class="form-select form-select-sm">
+                            <option value="10">10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            `;
+            
+            document.getElementById('resultsTable').innerHTML = tableHTML;
+            
+            // 初始化列宽调整功能
+            initializeResizers();
+            
+            // 渲染分页控件
+            renderPagination(totalFilteredData);
+            
+            // 设置每页显示数量选择器事件
+            document.getElementById('page-size-select').value = pageSize;
+            document.getElementById('page-size-select').addEventListener('change', function() {
+                pageSize = parseInt(this.value);
+                currentPage = 1; // 更改每页数量时，重置到第一页
+                applyFilters();
+            });
+            
+            // 为所有详情按钮添加点击事件处理
+            document.querySelectorAll('.view-details-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    showDetails(sortedData[index]);
+                });
+            });
+        }
+        
+        // 列宽调整功能
+        function initializeResizers() {
+            const resizers = document.querySelectorAll('.resizer');
+            let currentResizer;
+            
+            resizers.forEach(resizer => {
+                resizer.addEventListener('mousedown', mousedown);
+                
+                function mousedown(e) {
+                    currentResizer = e.target;
+                    const column = currentResizer.closest('th');
+                    
+                    // 获取初始宽度和鼠标位置
+                    const initialWidth = column.offsetWidth;
+                    const initialX = e.clientX;
+                    
+                    // 添加移动和释放事件监听
+                    document.addEventListener('mousemove', mousemove);
+                    document.addEventListener('mouseup', mouseup);
+                    
+                    // 防止选中文本
+                    e.preventDefault();
+                    
+                    // 添加调整中的样式
+                    currentResizer.classList.add('resizing');
+                    
+                    function mousemove(e) {
+                        // 计算新宽度
+                        const newWidth = initialWidth + (e.clientX - initialX);
+                        
+                        // 设置最小宽度为100px
+                        if (newWidth >= 100) {
+                            column.style.width = newWidth + 'px';
+                        }
+                    }
+                    
+                    function mouseup() {
+                        // 移除事件监听
+                        document.removeEventListener('mousemove', mousemove);
+                        document.removeEventListener('mouseup', mouseup);
+                        
+                        // 移除调整中的样式
+                        currentResizer.classList.remove('resizing');
+                    }
+                }
+            });
+        }
+        
+        // 显示漏洞详情
+        function showDetails(item) {
+            try {
+                console.log("显示详情，项目数据:", item);
+                if (!item) {
+                    console.error("未提供数据项");
+                    alert("无法显示详情: 未找到数据");
+                    return;
+                }
+                
+                // 获取模态框元素
+                const modal = document.getElementById('vulnerabilityDetailModal');
+                const modalTitle = document.getElementById('detailModalTitle');
+                const modalBody = document.getElementById('detailModalBody');
+                
+                if (!modal || !modalTitle || !modalBody) {
+                    console.error("找不到模态框或其组件");
+                    alert("无法显示详情: 界面元素缺失");
+                    return;
+                }
+                
+                modalTitle.textContent = item.method + " " + item.url;
+                
+                // 确定结果标签的样式和文本
+                const statusClass = item.result === "true" ? "text-danger" : 
+                                   item.result === "unknown" ? "text-warning" : "text-success";
+                                      
+                // 根据结果显示不同文本
+                const statusText = item.result === "true" ? "存在漏洞" : 
+                                  item.result === "unknown" ? "需人工确认" : "安全请求";
+                
+                // 构建摘要信息
+                let detailHTML = `
+                    <div class="card mb-3">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">检测结果摘要</h5>
+        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <table class="table table-sm">
+                                        <tr>
+                                            <th>URL</th>
+                                            <td>${item.url || '未知'}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>方法</th>
+                                            <td>${item.method || '未知'}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>状态</th>
+                                            <td><span class="${statusClass} fw-bold">${statusText}</span></td>
+                                        </tr>
+                                    </table>
+    </div>
+                                <div class="col-md-6">
+                                    <table class="table table-sm">
+                                        <tr>
+                                            <th>置信度</th>
+                                            <td>${item.confidenceScore ? item.confidenceScore + '分' : '未知'}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>漏洞类型</th>
+                                            <td>${normalizeVulnType(item.vulnType) || '未知'}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>原因</th>
+                                            <td>${item.reason || '未知'}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // 添加敏感数据部分（如果有）
+                if (item.sensitiveData && item.sensitiveData.length > 0) {
+                    detailHTML += `
+                        <div class="card mb-3">
+                            <div class="card-header bg-danger text-white">
+                                <h5 class="mb-0">敏感信息泄露 (${item.sensitiveData.length}项)</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-danger">
+                                    <p class="fw-bold mb-2">敏感数据检测结果:</p>
+                                    <ul class="list-group">
+                    `;
+                    
+                    // 分类敏感数据
+                    const sensitiveTypes = {};
+                    
+                    item.sensitiveData.forEach(data => {
+                        // 尝试提取敏感数据类型和数量
+                        const typeMatch = data.match(/发现(.*?)[:：]\s*(\d+)处/);
+                        if (typeMatch) {
+                            const type = typeMatch[1];
+                            const count = typeMatch[2];
+                            
+                            if (!sensitiveTypes[type]) {
+                                sensitiveTypes[type] = [];
+                            }
+                            
+                            // 提取样例
+                            const samplesMatch = data.match(/样例[:：]\s*(.*)/);
+                            if (samplesMatch) {
+                                const samples = samplesMatch[1].split(/,\s*/);
+                                sensitiveTypes[type] = sensitiveTypes[type].concat(samples);
+                            }
+                            
+                            detailHTML += `<li class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="fw-bold">${type}</span>
+                                    <span class="badge bg-danger rounded-pill">${count}处</span>
+                                </div>`;
+                                
+                            if (samplesMatch) {
+                                detailHTML += `<div class="mt-2 small">
+                                    <span class="fw-bold">样例:</span> ${samplesMatch[1]}
+                                </div>`;
+                            }
+                            
+                            detailHTML += `</li>`;
+                        } else {
+                            // 如果没有匹配到格式，直接显示原始数据
+                            detailHTML += `<li class="list-group-item">${data}</li>`;
+                        }
+                    });
+                    
+                    detailHTML += `
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // 添加请求对比部分，带复制按钮
+                detailHTML += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h5 class="mb-0">请求对比</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="request-container">
+                                        <h6 class="mb-2">原始请求</h6>
+                                        <button class="btn btn-sm btn-outline-secondary copy-btn" data-content="requestA">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                                <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/>
+                                                <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm1.5.5a1.5 1.5 0 0 0-1.5-1.5h-3A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5z"/>
+                                            </svg>
+                                        </button>
+                                        <pre class="language-http copy-target" id="requestA"><code>${formatFullRequest(item) || '无请求数据'}</code></pre>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="request-container">
+                                        <h6 class="mb-2">未授权请求</h6>
+                                        <button class="btn btn-sm btn-outline-secondary copy-btn" data-content="requestB">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                                <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/>
+                                                <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm1.5.5a1.5 1.5 0 0 0-1.5-1.5h-3A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5z"/>
+                                            </svg>
+                                        </button>
+                                        <pre class="language-http copy-target" id="requestB"><code>${formatFullRequest(item, true) || '无请求数据'}</code></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // 添加响应对比部分，带复制按钮
+                if (item.respBodyA || item.respBodyB) {
+                    detailHTML += `
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h5 class="mb-0">响应对比</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="request-container">
+                                            <h6 class="mb-2">原始响应</h6>
+                                            <button class="btn btn-sm btn-outline-secondary copy-btn" data-content="respBodyA">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                                    <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/>
+                                                    <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm1.5.5a1.5 1.5 0 0 0-1.5-1.5h-3A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5z"/>
+                                                </svg>
+                                            </button>
+                                            <pre class="language-json copy-target" id="respBodyA"><code>${formatJSON(item.respBodyA) || '无响应体'}</code></pre>
+                            </div>
+                            </div>
+                                    <div class="col-md-6">
+                                        <div class="request-container">
+                                            <h6 class="mb-2">未授权响应</h6>
+                                            <button class="btn btn-sm btn-outline-secondary copy-btn" data-content="respBodyB">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                                    <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/>
+                                                    <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm1.5.5a1.5 1.5 0 0 0-1.5-1.5h-3A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5z"/>
+                                                </svg>
+                                            </button>
+                                            <pre class="language-json copy-target" id="respBodyB"><code>${formatJSON(item.respBodyB) || '无响应体'}</code></pre>
+                        </div>
+                            </div>
+                            </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // 添加评分规则部分
+                if (item.matchedRules && item.matchedRules.length > 0) {
+                    detailHTML += `
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h5 class="mb-0">匹配的评分规则</h5>
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-group">
+                    `;
+                    
+                    item.matchedRules.forEach(rule => {
+                        detailHTML += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                            ${rule.name || rule}
+                            ${rule.weight ? `<span class="badge bg-primary rounded-pill">+${rule.weight}分</span>` : ''}
+                        </li>`;
+                    });
+                    
+                    detailHTML += `
+                                </ul>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                modalBody.innerHTML = detailHTML;
+                
+                // 为复制按钮添加事件处理
+                setupCopyButtons(item);
+                
+                // 显示模态框，直接使用Bootstrap的Modal对象
+                const vulnerabilityModal = new bootstrap.Modal(modal);
+                vulnerabilityModal.show();
+                
+                // 初始化语法高亮
+                setTimeout(() => {
+                    Prism.highlightAll();
+                }, 100);
+            } catch (error) {
+                console.error("显示详情时发生错误:", error);
+                alert("显示详情时发生错误: " + error.message);
+            }
+        }
+        
+        // 设置复制按钮功能
+        function setupCopyButtons(item) {
+            document.querySelectorAll('.copy-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const contentId = this.getAttribute('data-content');
+                    let textToCopy = '';
+                    
+                    // 根据contentId确定要复制的内容
+                    switch(contentId) {
+                        case 'requestA':
+                            textToCopy = formatFullRequest(item);
+                            break;
+                        case 'requestB':
+                            textToCopy = formatFullRequest(item, true);
+                            break;
+                        case 'respBodyA':
+                            textToCopy = typeof item.respBodyA === 'object' ? JSON.stringify(item.respBodyA, null, 2) : (item.respBodyA || '');
+                            break;
+                        case 'respBodyB':
+                            textToCopy = typeof item.respBodyB === 'object' ? JSON.stringify(item.respBodyB, null, 2) : (item.respBodyB || '');
+                            break;
+                    }
+                    
+                    // 复制到剪贴板
+                    navigator.clipboard.writeText(textToCopy)
+                        .then(() => {
+                            // 临时改变按钮文本提示复制成功
+                            const originalHTML = this.innerHTML;
+                            this.innerHTML = `
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check" viewBox="0 0 16 16">
+                                    <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
+                                </svg>
+                                已复制
+                            `;
+                            this.classList.remove('btn-outline-secondary');
+                            this.classList.add('btn-success');
+                            
+                            // 2秒后恢复原样
+                            setTimeout(() => {
+                                this.innerHTML = originalHTML;
+                                this.classList.remove('btn-success');
+                                this.classList.add('btn-outline-secondary');
+                            }, 2000);
+                        })
+                        .catch(() => {
+                            console.error('复制失败');
+                            alert('复制失败');
+                        });
+                });
+            });
+        }
+        
+        // 格式化完整请求数据
+        function formatFullRequest(item, isUnauthorized = false) {
+            let result = '';
+            
+            // 获取请求方法和URL
+            const method = item.method || '';
+            const url = item.url || '';
+            
+            // 处理URL，移除协议和域名部分
+            let path = url;
+            try {
+                const urlObj = new URL(url);
+                path = urlObj.pathname + urlObj.search;
+            } catch (e) {
+                // 如果URL解析失败，保持原样
+            }
+            
+            // 获取原始请求或未授权请求内容
+            const requestContent = isUnauthorized ? item.requestB : item.requestA;
+            
+            // 如果原始请求内容存在且包含HTTP方法和路径，直接使用
+            if (requestContent && (requestContent.startsWith('GET ') || requestContent.startsWith('POST ') || 
+                requestContent.startsWith('PUT ') || requestContent.startsWith('DELETE '))) {
+                // 原始请求内容已经包含完整的请求行和请求头，直接返回
+                return requestContent;
+            }
+            
+            // 若原始请求内容不存在或不完整，则手动构建
+            // 添加请求行
+            result += `${method} ${path} HTTP/1.1\n`;
+            
+            // 获取请求头
+            const headers = isUnauthorized ? item.headerB : item.headerA;
+            if (headers) {
+                // 如果是字符串格式的头部，直接添加
+                if (typeof headers === 'string') {
+                    result += headers + '\n';
+                    } else {
+                    // 如果是对象，按顺序添加关键请求头
+                    const headerOrder = [
+                        'Host',
+                        'Content-Type',
+                        'Content-Length',
+                        'Cookie',
+                        'Accept',
+                        'Accept-Language',
+                        'Accept-Encoding',
+                        'Connection',
+                        'Origin',
+                        'Referer',
+                        'User-Agent'
+                    ];
+                    
+                    // 先添加有序的请求头
+                    headerOrder.forEach(key => {
+                        if (headers[key]) {
+                            result += `${key}: ${headers[key]}\n`;
+                        }
+                    });
+                    
+                    // 添加其他请求头
+                    for (const key in headers) {
+                        if (!headerOrder.includes(key)) {
+                            result += `${key}: ${headers[key]}\n`;
+                        }
+                    }
+                }
+            }
+            
+            // 添加空行分隔请求头和请求体
+            result += '\n';
+            
+            // 获取请求体
+            const body = isUnauthorized ? item.requestB : item.requestA;
+            if (body) {
+                // 如果body是对象，序列化为JSON
+                if (typeof body === 'object' && body !== null) {
+                    result += JSON.stringify(body, null, 2);
+                } else if (typeof body === 'string') {
+                    // 如果是字符串，提取请求体部分
+                    
+                    // 查找请求体开始位置（即空行之后）
+                    const bodyIndex = body.indexOf('\n\n');
+                    if (bodyIndex !== -1) {
+                        // 有明确的空行分隔，获取空行之后的内容作为请求体
+                        result += body.substring(bodyIndex + 2);
+                    } else {
+                        // 尝试找到JSON格式的内容
+                        const jsonMatch = body.match(/(\{.*\})/s);
+                        if (jsonMatch) {
+                            result += jsonMatch[1];
+                        }
+                    }
+                }
+            }
+            
+            return result.trim();
+        }
+        
+        // 格式化JSON字符串显示
+        function formatJSON(jsonStr) {
+            if (!jsonStr) return '';
+            try {
+                // 如果是字符串，尝试解析为JSON
+                if (typeof jsonStr === 'string') {
+                    // 检查是否是HTTP请求格式
+                    if (jsonStr.includes('HTTP/') || jsonStr.includes('POST ') || jsonStr.includes('GET ')) {
+                        return jsonStr;
+                    }
+                    const obj = JSON.parse(jsonStr);
+                    return JSON.stringify(obj, null, 2);
+                }
+                // 如果已经是对象，直接格式化
+                else if (typeof jsonStr === 'object') {
+                    return JSON.stringify(jsonStr, null, 2);
+                }
+                return jsonStr;
+            } catch (e) {
+                // 如果解析失败，直接返回原始字符串
+                return jsonStr;
+            }
+        }
+        
+        // 修改导出报告函数为直接下载
+        function exportReport() {
+            // 显示加载状态
+            const exportBtn = document.getElementById('exportBtn');
+            const originalText = exportBtn.innerHTML;
+            exportBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 生成中...';
+            exportBtn.disabled = true;
+            
+            fetch('/report/HTML')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.filepath) {
+                        // 创建一个隐藏的a标签来触发下载
+                        const link = document.createElement('a');
+                        link.href = '/download-report?file=' + encodeURIComponent(data.filepath);
+                        link.download = 'vulnerability_report.html';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        // 恢复按钮状态
+                        exportBtn.innerHTML = originalText;
+                        exportBtn.disabled = false;
+                    } else {
+                        alert('报告生成失败: ' + (data.error || '未知错误'));
+                        exportBtn.innerHTML = originalText;
+                        exportBtn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('导出报告失败:', error);
+                    alert('导出报告失败，请重试');
+                    exportBtn.innerHTML = originalText;
+                    exportBtn.disabled = false;
+                });
+        }
+
+        // 添加分页逻辑函数
+        function renderPagination(data) {
+            const totalItems = data.length;
+            totalPages = Math.ceil(totalItems / pageSize);
+            
+            // 如果只有一页，不显示分页控件
+            if (totalPages <= 1) {
+                document.getElementById('pagination-controls').innerHTML = '';
+                return;
+            }
+            
+            // 计算当前页显示的数据范围
+            const startIndex = (currentPage - 1) * pageSize + 1;
+            const endIndex = Math.min(startIndex + pageSize - 1, totalItems);
+            
+            // 更新显示信息
+            document.getElementById('page-start').textContent = startIndex;
+            document.getElementById('page-end').textContent = endIndex;
+            document.getElementById('total-count').textContent = totalItems;
+            
+            // 渲染分页按钮
+            let paginationHTML = '';
+            
+            // 添加上一页按钮
+            paginationHTML += `
+                <button class="pagination-btn" id="prev-page" ${currentPage === 1 ? 'disabled' : ''}>
+                    &laquo;
+                </button>
+            `;
+            
+            // 添加页码按钮
+            const maxVisiblePages = 5; // 最多显示的页码数量
+            let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+            
+            // 调整startPage，确保显示足够的页码
+            if (endPage - startPage + 1 < maxVisiblePages) {
+                startPage = Math.max(1, endPage - maxVisiblePages + 1);
+            }
+            
+            // 添加第一页和省略号
+            if (startPage > 1) {
+                paginationHTML += `<button class="pagination-btn" data-page="1">1</button>`;
+                if (startPage > 2) {
+                    paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+                }
+            }
+            
+            // 添加中间页码
+            for (let i = startPage; i <= endPage; i++) {
+                paginationHTML += `
+                    <button class="pagination-btn ${i === currentPage ? 'active' : ''}" data-page="${i}">
+                        ${i}
+                    </button>
+                `;
+            }
+            
+            // 添加最后页和省略号
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+                }
+                paginationHTML += `<button class="pagination-btn" data-page="${totalPages}">${totalPages}</button>`;
+            }
+            
+            // 添加下一页按钮
+            paginationHTML += `
+                <button class="pagination-btn" id="next-page" ${currentPage === totalPages ? 'disabled' : ''}>
+                    &raquo;
+                </button>
+            `;
+            
+            // 设置HTML
+            document.getElementById('pagination-controls').innerHTML = paginationHTML;
+            
+            // 为所有页码按钮添加事件处理
+            document.querySelectorAll('.pagination-btn[data-page]').forEach(button => {
+                button.addEventListener('click', function() {
+                    currentPage = parseInt(this.getAttribute('data-page'));
+                    applyFilters();
+                });
+            });
+            
+            // 为上一页添加事件处理
+            const prevButton = document.getElementById('prev-page');
+            if (prevButton) {
+                prevButton.addEventListener('click', function() {
+                    if (currentPage > 1) {
+                        currentPage--;
+                        applyFilters();
+                    }
+                });
+            }
+            
+            // 为下一页添加事件处理
+            const nextButton = document.getElementById('next-page');
+            if (nextButton) {
+                nextButton.addEventListener('click', function() {
+                    if (currentPage < totalPages) {
+                        currentPage++;
+                        applyFilters();
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+</html>

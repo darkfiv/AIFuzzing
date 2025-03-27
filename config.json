@@ -1,0 +1,275 @@
+{
+  "AI": "deepseek",
+  "requestFilters": {
+    "enabled": true,
+    "paramPatterns": [
+      {
+        "name": "MemberId检测",
+        "pattern": "[mM][eE][mM][bB][eE][rR][iI][dD]=(?:I0_[A-Za-z0-9]{32}|[A-Za-z0-9]{32}|\\d{1,15})",
+        "description": "匹配GET请求参数中，疑似包含memberid的越权请求",
+        "methods": ["POST","GET"]
+      },
+      {
+        "name": "MemberId检测",
+        "pattern": "[mM][iI][dD]=(?:I0_[A-Za-z0-9]{32}|[A-Za-z0-9]{32}|\\d{1,15})",
+        "description": "匹配GET请求参数中，疑似包含mid的越权请求",
+        "methods": ["POST","GET"]
+      },
+      {
+        "name": "MemberId检测",
+        "pattern": "\"[mM][eE][mM][bB][eE][rR][iI][dD]\"\\s*:\\s*\"(?:I0_[A-Za-z0-9]{32}|(?<!\\d)\\d{1,15}(?!\\d)|[A-Za-z0-9]{32})\"",
+        "description": "匹配POST请求参数中，疑似包含memberid的越权请求",
+        "methods": ["POST"],
+        "contentType": ["application/json"]
+      },
+      {
+        "name": "MemberId检测",
+        "pattern": "\"[mM][iI][dD]\"\\s*:\\s*\"(?:I0_[A-Za-z0-9]{32}|(?<!\\d)\\d{1,15}(?!\\d)|[A-Za-z0-9]{32})\"",
+        "description": "匹配POST请求参数中，疑似包含memberid的越权请求",
+        "methods": ["POST"],
+        "contentType": ["application/json"]
+      },{
+        "name": "MemberId检测",
+        "pattern": "\"[aA][pP][pP][mM][eE][mM][bB][eE][rR][iI][dD]\"\\s*:\\s*\"(?:I0_[A-Za-z0-9]{32}|(?<!\\d)\\d{1,15}(?!\\d)|[A-Za-z0-9]{32})\"",
+        "description": "匹配POST请求参数中，疑似包含memberid的越权请求",
+        "methods": ["POST"],
+        "contentType": ["application/json"]
+      },
+      {
+        "name": "API请求",
+        "pattern": "/api/",
+        "description": "检测API接口调用",
+        "methods": ["GET", "POST", "PUT", "DELETE"]
+      },
+      {
+        "name": "KFPTAPI请求",
+        "pattern": "/kfptapi/",
+        "description": "检测KFPTAPI接口调用",
+        "methods": ["GET", "POST", "PUT", "DELETE"]
+      },
+      {
+        "name": "用户数据",
+        "pattern": "user|account|profile",
+        "description": "检测与用户数据相关的请求",
+        "methods": ["GET", "POST"],
+        "contentType": ["application/json"]
+      },
+      {
+        "pattern": "id=\\d+",
+        "methods": ["GET", "POST", "PUT", "DELETE"],
+        "contentType": ["application/json", "application/x-www-form-urlencoded"]
+      },
+      {
+        "pattern": "userId=\\d+|user_id=\\d+",
+        "methods": ["GET", "POST", "PUT", "DELETE"],
+        "contentType": ["application/json", "application/x-www-form-urlencoded"]
+      }
+    ]
+  },
+  "unauthorizedScan": {
+    "enabled": true,
+    "removeHeaders": [
+      "Authorization",
+      "Cookie",
+      "Token",
+      "Jwt",
+      "X-Auth-Token",
+      "X-Csrf-Token",
+      "Sectoken",
+      "Tcsectoken",
+      "X-Api-Key"
+    ],
+    "similarityThreshold": 0.5,
+    "excludePatterns": [
+      "/static/",
+      "/login",
+      "/logout",
+      "/register",
+      "/signin",
+      "/signup",
+      "/assets/",
+      "/js/",
+      "/css/",
+      "/img/",
+      "/fonts/",
+      "/upload/",
+      "/download/",
+      "/upload",
+      "/download"
+    ],
+    "sensitiveDataPatterns": {
+      "enabled": true,
+      "patterns": [
+        {
+          "name": "phone",
+          "pattern": "1[3-9]\\d{9}",
+          "description": "中国手机号码"
+        },
+        {
+          "name": "email",
+          "pattern": "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}",
+          "description": "电子邮箱"
+        },
+        {
+          "name": "idCard",
+          "pattern": "(^|[^0-9A-Za-z])((1[1-5]|2[1-3]|3[1-7]|4[1-6]|5[0-4]|6[1-5]|71|81|82|91|11|12|13|14|15|21|22|23|31|32|33|34|35|36|37|41|42|43|44|45|46|50|51|52|53|54|61|62|63|64|65|72|73|74|75|76|77|78|79|80|83|84|85|86|87|88|89|90|92|93|94|95|96|97|98|99)\\d{4}(19|20)\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}[0-9Xx]|((1[1-5]|2[1-3]|3[1-7]|4[1-6]|5[0-4]|6[1-5]|71|81|82|91|11|12|13|14|15|21|22|23|31|32|33|34|35|36|37|41|42|43|44|45|46|50|51|52|53|54|61|62|63|64|65|72|73|74|75|76|77|78|79|80|83|84|85|86|87|88|89|90|92|93|94|95|96|97|98|99)\\d{4}\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}))\"",
+          "description": "中国身份证号"
+        },
+        {
+          "name": "bankCard",
+          "pattern": "(^|[^0-9A-Za-z])(4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|6(?:011|5[0-9]{2})[0-9]{12}|3[47][0-9]{13}|3(?:0[0-5]|[68][0-9])[0-9]{11}|(?:2131|1800|35\\d{3})\\d{11})($|[^0-9A-Za-z])",
+          "description": "银行卡号"
+        }
+      ],
+      "jsonPatterns": [
+        {
+          "name": "phone",
+          "pattern": "\"1[3-9]\\d{9}\"",
+          "description": "JSON中的中国手机号码"
+        },
+        {
+          "name": "email",
+          "pattern": "\"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\"",
+          "description": "JSON中的电子邮箱"
+        },
+        {
+          "name": "idCard",
+          "pattern": "\"[^\"]*\":\\s*\"((1[1-5]|2[1-3]|3[1-7]|4[1-6]|5[0-4]|6[1-5]|71|81|82|91|11|12|13|14|15|21|22|23|31|32|33|34|35|36|37|41|42|43|44|45|46|50|51|52|53|54|61|62|63|64|65|72|73|74|75|76|77|78|79|80|83|84|85|86|87|88|89|90|92|93|94|95|96|97|98|99)\\d{4}(19|20)\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}[0-9Xx]|((1[1-5]|2[1-3]|3[1-7]|4[1-6]|5[0-4]|6[1-5]|71|81|82|91|11|12|13|14|15|21|22|23|31|32|33|34|35|36|37|41|42|43|44|45|46|50|51|52|53|54|61|62|63|64|65|72|73|74|75|76|77|78|79|80|83|84|85|86|87|88|89|90|92|93|94|95|96|97|98|99)\\d{4}\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}))\"",
+          "description": "JSON中的中国身份证号"
+        },
+        {
+          "name": "bankCard",
+          "pattern": "\"(^|[^0-9A-Za-z])(4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|6(?:011|5[0-9]{2})[0-9]{12}|3[47][0-9]{13}|3(?:0[0-5]|[68][0-9])[0-9]{11}|(?:2131|1800|35\\d{3})\\d{11})($|[^0-9A-Za-z])\"",
+          "description": "JSON中的银行卡号"
+        }
+      ]
+    },
+    "useConfidenceScore": true,
+    "highConfidenceScore": 60,
+    "mediumConfidenceScore": 40,
+    "lowConfidenceScore": 20,
+    "confidenceRules": [
+      {
+        "name": "contains_sensitive_data",
+        "description": "响应中包含敏感数据（如手机号、身份证等）",
+        "weight": 40
+      },
+      {
+        "name": "successful_status_code",
+        "description": "响应状态码为2xx",
+        "weight": 15
+      },
+      {
+        "name": "json_response",
+        "description": "响应为有效的JSON格式",
+        "weight": 10
+      },
+      {
+        "name": "similar_content_length",
+        "description": "与原始响应长度相似",
+        "weight": 5
+      },
+      {
+        "name": "api_endpoint",
+        "description": "请求URL是典型的API端点",
+        "weight": 10
+      }
+    ]
+  },
+  "apiKeys": {
+    "kimi": "sk-xxxxxxx",
+    "deepseek": "sk-cba4b1fb62734a4797d82131a0925c62",
+    "qianwen": "sk-zzzzzzz",
+    "hunyuan": "sk-aaaaaaa",
+    "glm": "sk-ccccccc",
+    "gpt": "sk-bbbbbbb"
+  },
+  "headers2": {
+   "Cookie":"test",
+   "X-App-Token-M": "7372fb78b00a382a61a48d317e228403",
+   "X-App-Token-S": "7372fb78b00a382a61a48d317e228403",
+    "User-Agent": "AIFuzzing",
+    "Custom-Header": "CustomValue"
+  },
+  "suffixes": [
+    ".js",
+    ".css",
+    ".ico",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".svg",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".map",
+    ".webp"
+  ],
+  "allowedRespHeaders": [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "text/css",
+    "application/javascript",
+    "application/x-javascript",
+    "application/pdf",
+    "font/woff",
+    "font/woff2",
+    "application/octet-stream"
+  ],
+  "respBodyBWhiteList": [
+    "参数错误",
+    "数据页数不正确",
+    "文件不存在",
+    "系统繁忙，请稍后再试",
+    "请求参数格式不正确",
+    "权限不足",
+    "Access Denied",
+    "Permission Denied",
+    "Unauthorized Access",
+    "请先登录",
+    "Token不可为空",
+    "会话已过期",
+    "暂无数据",
+    "请求频率超限"
+  ],
+  "performance": {
+    "maxConcurrentScans": 5,
+    "scanTimeout": 15,
+    "requestTimeout": 5
+  },
+  "log": {
+    "level": "debug",
+    "enableFile": true,
+    "directory": "logs"
+  },
+  "output": {
+    "enableWebUI": true,
+    "webUIPort": 8222,
+    "enableReportFile": true,
+    "reportDirectory": "./reports",
+    "reportFormat": "html"
+  },
+  "proxy": {
+    "port": 9080,
+    "streamLargeBodies": 10240
+  },
+  "privilegeEscalationScan": {
+    "enabled": true,
+    "similarityThreshold": 0.6,
+    "paramPatterns": [
+      "id=\\d+",
+      "userId=\\d+",
+      "user_id=\\d+",
+      "memberId=\\d+",
+      "member_id=\\d+",
+      "accountId=\\d+",
+      "account_id=\\d+",
+      "orderId=\\d+",
+      "order_id=\\d+",
+      "tid=\\d+"
+    ]
+  }
+}

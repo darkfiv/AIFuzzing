@@ -225,12 +225,12 @@ func index(port int) {
 		// 获取分页参数
 		pageStr := c.DefaultQuery("page", "1")
 		pageSizeStr := c.DefaultQuery("pageSize", "10")
-		
+
 		page, err := strconv.Atoi(pageStr)
 		if err != nil || page < 1 {
 			page = 1
 		}
-		
+
 		pageSize, err := strconv.Atoi(pageSizeStr)
 		if err != nil || pageSize < 1 || pageSize > 100 {
 			pageSize = 10
@@ -258,11 +258,29 @@ func index(port int) {
 		Resp = append(Resp, newData)
 
 		// 同时添加到报告生成器
-		if reportGenerator != nil {
-			reportGenerator.AddResult(newData)
+	if reportGenerator != nil {
+		// 将 Result 结构体转换为 map[string]interface{}
+		resultMap := map[string]interface{}{
+			"method":        newData.Method,
+			"url":          newData.Url,
+			"requestA":     newData.RequestA,
+			"requestB":     newData.RequestB,
+			"headerA":      newData.HeaderA,
+			"headerB":      newData.HeaderB,
+			"respBodyA":    newData.RespBodyA,
+			"respBodyB":    newData.RespBodyB,
+			"result":       newData.Result,
+			"reason":       newData.Reason,
+			"vulnType":     newData.VulnType,
+			"similarity":   newData.Similarity,
+			"differences":  newData.Differences,
+			"sensitiveData": newData.SensitiveData,
+			"scanTime":     newData.ScanTime,
 		}
+		reportGenerator.AddResult(resultMap)
+	}
 
-		c.JSON(http.StatusOK, gin.H{"message": "数据更新成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "数据更新成功"})
 	})
 
 	r.POST("/filter", func(c *gin.Context) {
@@ -324,9 +342,24 @@ func index(port int) {
 			return
 		}
 
-		format := c.Param("format")
+		format := strings.ToLower(c.Param("format"))
 		if format == "" {
-			format = "HTML"
+			format = "html"
+		}
+
+		// 检查支持的格式
+		supportedFormats := []string{"html", "json", "csv"} // 添加其他支持的格式
+		formatSupported := false
+		for _, supportedFormat := range supportedFormats {
+			if format == supportedFormat {
+				formatSupported = true
+				break
+			}
+		}
+
+		if !formatSupported {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("不支持的报告格式: %s", format)})
+			return
 		}
 
 		filepath, err := reportGenerator.GenerateReport(format)
@@ -518,7 +551,7 @@ func (a *MyAddon) Error(f *proxy.Flow) {
 	utils.Error("代理请求处理发生错误, ID=%s, URL=%s", f.Id, f.Request.URL)
 
 	// 检查证书路径
-	certPath := os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca-cert.pem")
+	certPath := os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca.pem")
 	if _, err := os.Stat(certPath); err != nil {
 		utils.Error("证书文件异常: %v, 路径: %s", err, certPath)
 	} else {
@@ -535,6 +568,7 @@ func (a *MyAddon) Error(f *proxy.Flow) {
 
 // mitmproxy 启动代理服务
 func mitmproxy(port int, streamLargeBodies int) {
+
 	portStr := ":9080" // 默认端口
 	if port > 0 {
 		portStr = ":" + strconv.Itoa(port)

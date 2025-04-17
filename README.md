@@ -1,159 +1,105 @@
 # AIFuzzing
 
-AIFuzzing是一款基于人工智能的Web安全漏洞自动化检测工具，专注于被动式检测未授权访问与越权漏洞。通过智能分析HTTP请求和响应，AIFuzzing可以自动发现应用程序中潜在的安全问题，帮助开发人员和安全研究人员提前识别并修复漏洞。
+AIFuzzing 是一款基于代理的被动式 Web 安全扫描工具，专注于检测未授权访问和越权漏洞。它通过拦截和分析应用程序流量，自动发现潜在的安全问题，帮助开发人员和安全研究人员提前识别并修复漏洞。
+
+![AIFuzzing Logo](https://path-to-your-logo.png)
 
 ## 核心功能
 
-- **被动式漏洞检测**：无需主动发起扫描，通过代理服务器捕获真实流量进行分析
-- **未授权访问检测**：自动识别API接口的访问控制缺陷
-- **水平/垂直越权检测**：通过请求差异对比识别越权漏洞
-- **敏感数据泄露检测**：使用正则表达式识别响应中的敏感信息（手机号、邮箱、身份证等）
-- **AI辅助分析**：利用大语言模型分析请求和响应差异，提高检测准确性
-- **实时Web界面**：直观展示检测结果并支持筛选
-- **详细报告生成**：支持多种格式的安全报告导出
+- **被动式漏洞扫描**：无需主动发起扫描，通过代理服务器捕获真实流量进行分析
+- **未授权访问检测**：自动移除授权头部并重放请求，检测缺乏访问控制的 API 接口
+- **越权漏洞检测**：识别并替换请求中的敏感参数，检测水平和垂直越权问题
+- **敏感数据识别**：使用正则表达式识别响应中的敏感信息（手机号、邮箱、身份证等）
+- **智能置信度评分**：多维度评估漏洞可能性，减少误报
+- **流式响应处理**：高效处理大型响应体，确保扫描性能
+- **Web UI 界面**：实时查看扫描结果，支持结果筛选和报告导出
+- **AI 辅助分析**：利用大语言模型分析复杂场景，提高检测准确性
 
-## 技术特点
-
-### 智能噪音过滤
-
-AIFuzzing采用多重策略过滤噪音数据，提高检测准确率：
-
-1. **静态资源过滤**：自动识别并忽略JS、CSS、图片等静态资源请求
-2. **响应内容过滤**：过滤常见的401/403错误页面、验证码页面等
-3. **业务错误识别**：智能识别JSON响应中的业务错误码，避免将正常业务响应误判为漏洞
-4. **相似度比对**：使用文本相似度算法分析响应内容差异，降低误报率
-5. **白名单机制**：支持URL和响应内容白名单，忽略已知安全的接口
-
-### 智能优先级处理
-
-AIFuzzing实现了智能的请求处理优先级系统：
-
-1. **高优先级请求处理**：登录、认证、Token相关请求优先处理，确保授权信息能及时获取
-2. **低优先级并发处理**：常规API请求在资源允许的条件下并发处理
-3. **自动资源清理**：过期和已处理请求自动清理，防止内存泄漏
-
-### 未授权访问检测技术
-
-针对未授权访问漏洞的智能检测：
-
-1. **置信度评分系统**：采用多维度规则评估未授权访问可能性，减少误报
-2. **认证头部移除**：自动移除认证相关头部后重放请求
-3. **状态码分析**：根据不同状态码进行初步判断，如200与401/403的差异
-4. **敏感数据检测**：自动识别响应中的敏感信息（手机号、身份证等）
-5. **错误关键词分析**：检测响应中是否包含权限错误相关词汇
-
-### 基于敏感数据的越权漏洞检测
-
-AIFuzzing创新性地将敏感数据检测作为越权判定的核心指标：
-
-1. **多方位分析**：对比原始请求和伪造请求响应中的敏感数据差异
-2. **双重判定机制**：
-   - 若替换请求响应中包含敏感数据但原始响应中没有 → 极可能存在越权
-   - 若两者都包含敏感数据但内容不同 → 确认存在越权
-   - 若两者包含相同敏感数据 → 结合相似度和AI分析进行判断
-
-3. **人工智能辅助**：当敏感数据和相似度判断不明确时，调用大语言模型进行深度分析
-
-### 置信度评分系统
-
-AIFuzzing的置信度评分系统用于评估未授权访问漏洞的可能性：
-
-1. **多规则评分**：综合8种不同规则进行评分：
-   - 敏感数据存在（40分）
-   - 成功状态码（15分）
-   - 无错误关键词（15分）
-   - JSON响应（10分）
-   - 非空响应（10分）
-   - API端点（10分）
-   - 相同内容类型（5分）
-   - 相似响应长度（5分）
-   
-2. **置信度等级**：
-   - 高置信度（≥60分）：极有可能存在未授权访问
-   - 中置信度（40-59分）：可能存在未授权访问
-   - 低置信度（20-39分）：潜在未授权访问，需进一步验证
-   - 不可信（<20分）：很可能不存在漏洞
-
-3. **自定义规则**：支持自定义评分规则和权重，适应不同业务场景
-
-### 敏感数据识别
-
-内置多种敏感数据模式识别能力：
-
-- 手机号码
-- 电子邮箱
-- 身份证号
-- 中文姓名
-- 银行卡号
-- 用户ID
-- 地址信息
-
-## 安装与使用
+## 安装指南
 
 ### 系统要求
 
-- Go 1.18+
-- 支持Windows, macOS, Linux
+- 支持 Windows、macOS 和 Linux
+- 足够的内存处理并发请求（建议至少 4GB RAM）
 
-### 安装方法
+### 下载与安装
+
+#### 预编译二进制文件
+
+直接从 [Releases](https://github.com/yourusername/AIFuzzing/releases) 页面下载对应平台的二进制文件:
+
+- Windows: `aifuzz_win_amd64.exe` (x64) / `aifuzz_win_arm64.exe` (ARM)
+- macOS: `aifuzz_mac_amd64` (Intel) / `aifuzz_mac_arm64` (Apple Silicon)
+- Linux: `aifuzz_linux_amd64` (x64)
 
 #### 从源码编译
 
-1. 克隆仓库
+需要 Go 1.18 或更高版本：
+
 ```bash
+# 克隆仓库
 git clone https://github.com/yourusername/AIFuzzing.git
 cd AIFuzzing
+
+# 安装依赖
+go mod download
+
+# 编译
+go build -o aifuzz
 ```
 
-2. 不同环境下编译
+## 快速开始
 
-**macOS**
+1. **启动代理服务**
+
 ```bash
-# 对于Intel芯片
-GOOS=darwin GOARCH=amd64 go build -o aifuzz
+# Windows
+aifuzz_win_amd64.exe
 
-# 对于M1/M2/M3芯片
-GOOS=darwin GOARCH=arm64 go build -o aifuzz
+# macOS/Linux
+./aifuzz_mac_arm64
+# 或
+./aifuzz_linux_amd64
 ```
 
-**Linux**
+默认使用配置文件 `config.json`，也可指定配置文件：
+
 ```bash
-GOOS=linux GOARCH=amd64 go build -o aifuzz
+./aifuzz -config my-config.json
 ```
 
-**Windows**
-```bash
-GOOS=windows GOARCH=amd64 go build -o aifuzz.exe
-```
+2. **配置浏览器或应用程序代理**
 
-### 快速开始
+设置代理地址为 `127.0.0.1:9080`（默认端口）
 
-1. 配置代理：
-```bash
-./aifuzz -port 9080
-```
+3. **安装 HTTPS 证书**
 
-2. 配置浏览器代理：
-   - 设置HTTP/HTTPS代理为127.0.0.1:9080
-   - 访问mitm.it安装HTTPS证书
+首次使用时需安装 HTTPS 证书：
+- 启动 AIFuzzing 后访问 `http://mitm.it`
+- 下载并安装对应系统的证书
+- 确保证书被操作系统和浏览器信任
 
-3. 访问Web界面查看结果：
-   - 打开浏览器访问http://127.0.0.1:8222
+4. **访问 Web 界面查看结果**
 
-### 配置说明
+浏览器访问 `http://127.0.0.1:8222` 查看实时扫描结果
 
-工具的核心配置存储在`config.json`文件中，主要包括以下部分：
+## 配置详解
 
-#### 代理配置
+AIFuzzing 使用 JSON 格式的配置文件，主要配置项如下：
+
+### 代理配置
 
 ```json
 "proxy": {
   "port": 9080,
-  "streamLargeBodies": 1024
+  "streamLargeBodies": 102400
 }
 ```
 
-#### 未授权访问扫描配置
+- `port`: 代理服务器监听端口
+- `streamLargeBodies`: 以字节为单位的大响应体阈值，超过此值使用流式处理（默认 10MB）
+
+### 未授权访问扫描配置
 
 ```json
 "unauthorizedScan": {
@@ -165,26 +111,43 @@ GOOS=windows GOARCH=amd64 go build -o aifuzz.exe
     "Jwt",
     "X-Auth-Token",
     "X-Csrf-Token",
+    "Sectoken",
     "X-Api-Key"
+  ],
+  "similarityThreshold": 0.5,
+  "excludePatterns": [
+    "/static/",
+    "/login",
+    "/logout"
   ],
   "sensitiveDataPatterns": {
     "enabled": true,
-    "patterns": [
+    "jsonPatterns": [
       {
         "name": "phone",
-        "pattern": "1[3-9]\\d{9}",
+        "pattern": "(?:[^\\w]|^)((?:(?:\\+|00)86)?1(?:(?:3[\\d])|(?:4[5-79])|(?:5[0-35-9])|(?:6[5-7])|(?:7[0-8])|(?:8[\\d])|(?:9[189]))\\d{8})(?:[^\\w]|$)",
         "description": "中国手机号码"
       }
     ]
   },
   "useConfidenceScore": true,
   "highConfidenceScore": 60,
-  "mediumConfidenceScore": 40,
-  "lowConfidenceScore": 20
+  "mediumConfidenceScore": 45,
+  "lowConfidenceScore": 35
 }
 ```
 
-#### 越权检测配置
+- `enabled`: 是否启用未授权访问扫描
+- `removeHeaders`: 重放请求时要移除的鉴权头部列表
+- `similarityThreshold`: 响应相似度阈值，用于比较原始响应和未授权响应
+- `excludePatterns`: 排除的 URL 路径模式列表
+- `sensitiveDataPatterns`: 敏感数据检测配置，包含 JSON 响应中的敏感数据模式
+- `useConfidenceScore`: 是否启用置信度评分系统
+- `highConfidenceScore`: 高置信度分数阈值（≥此值视为高可能性漏洞）
+- `mediumConfidenceScore`: 中置信度分数阈值
+- `lowConfidenceScore`: 低置信度分数阈值
+
+### 越权漏洞扫描配置
 
 ```json
 "privilegeEscalationScan": {
@@ -194,82 +157,200 @@ GOOS=windows GOARCH=amd64 go build -o aifuzz.exe
     "id=\\d+",
     "userId=\\d+",
     "user_id=\\d+",
+    "accountId=\\d+",
     "memberId=\\d+"
   ]
 }
 ```
 
-#### AI辅助分析配置
+- `enabled`: 是否启用越权漏洞扫描
+- `similarityThreshold`: 响应相似度阈值
+- `paramPatterns`: 用于识别可能触发越权漏洞的参数模式列表
+
+### 白名单配置
+
+```json
+"suffixes": [
+  ".js", ".css", ".ico", ".jpg", ".jpeg", ".png", ".gif"
+],
+"allowedRespHeaders": [
+  "image/png", "image/jpeg", "image/gif", "text/css", "application/javascript"
+]
+```
+
+- `suffixes`: 静态资源文件扩展名列表，这些请求将被忽略
+- `allowedRespHeaders`: 响应内容类型白名单列表，匹配这些类型的响应将被忽略
+
+### 性能调优
+
+```json
+"performance": {
+  "maxConcurrentScans": 10,
+  "scanTimeout": 15,
+  "requestTimeout": 5
+}
+```
+
+- `maxConcurrentScans`: 最大并发扫描数量
+- `scanTimeout`: 扫描超时时间（秒）
+- `requestTimeout`: 请求超时时间（秒）
+
+### 日志配置
+
+```json
+"log": {
+  "level": "debug",
+  "enableFile": true,
+  "directory": "logs"
+}
+```
+
+- `level`: 日志级别，可选值：debug, info, warning, error
+- `enableFile`: 是否启用文件日志
+- `directory`: 日志文件存储目录
+
+### 输出配置
+
+```json
+"output": {
+  "enableWebUI": true,
+  "webUIPort": 8222,
+  "enableReportFile": true,
+  "reportDirectory": "./reports",
+  "reportFormat": "html"
+}
+```
+
+- `enableWebUI`: 是否启用 Web 界面
+- `webUIPort`: Web 界面端口
+- `enableReportFile`: 是否启用报告文件生成
+- `reportDirectory`: 报告文件存储目录
+- `reportFormat`: 报告文件格式，支持 html, json, csv
+
+### AI 辅助分析配置
 
 ```json
 "AI": "deepseek",
 "apiKeys": {
-  "deepseek": "sk-xxxxxxx",
-  "kimi": "sk-xxxxxxx",
-  "qianwen": "sk-xxxxxxx",
-  "gpt": "sk-xxxxxxx"
+  "deepseek": "sk-xxx",
+  "kimi": "sk-xxx",
+  "qianwen": "sk-xxx",
+  "hunyuan": "sk-xxx",
+  "glm": "sk-xxx",
+  "gpt": "sk-xxx"
 }
 ```
 
-## 检测原理
+- `AI`: 默认使用的 AI 模型
+- `apiKeys`: 各 AI 模型的 API 密钥配置
 
-### 未授权访问检测
+## 大响应处理机制
 
-1. 移除原始请求中的认证相关头部（Cookie、Authorization等）
-2. 发送修改后的请求并获取响应
-3. 分析响应内容，通过置信度评分系统评估未授权访问可能性
-4. 检测响应中的敏感数据，如存在则提高风险等级
-5. 返回检测结果和详细信息
+AIFuzzing 内置了高效的大响应处理机制：
 
-### 越权漏洞检测
+1. 通过 `proxy.streamLargeBodies` 设置大响应流式处理阈值（默认 100KB）
+2. 使用 go-mitmproxy 提供的流式处理能力，避免一次性加载整个响应体
+3. 敏感数据检测时，对于超过 10MB 的响应体会进行截断处理以保护性能
+4. 在比较响应相似度时，仅处理合理长度的数据段
 
-1. 识别请求中的敏感参数（如ID、用户标识符等）
-2. 替换请求中的认证信息为其他用户的身份
-3. 发送修改后的请求并获取响应
-4. 比较原始响应和修改后响应的敏感数据差异
-5. 调用AI模型分析响应内容差异，识别潜在越权问题
-6. 返回检测结果和详细信息
+这些机制确保了工具在处理大型响应时的性能和稳定性。
+
+## Web 界面使用
+
+访问 `http://127.0.0.1:8222` 可使用 Web 界面：
+
+1. **实时结果查看**：查看检测到的漏洞详情
+2. **结果筛选**：按漏洞类型、检测结果进行筛选
+3. **统计概览**：查看漏洞统计数据
+4. **报告生成**：生成并下载安全报告
+
+## 命令行参数
+
+```
+Usage: aifuzz [options]
+
+Options:
+  -config string
+        配置文件路径 (默认 "config.json")
+  -disableWebUI
+        禁用Web界面
+  -log string
+        日志级别：debug, info, warning, error (默认 使用配置文件设置)
+  -logFile
+        启用文件日志
+  -port int
+        代理服务器端口 (默认 使用配置文件设置)
+```
 
 ## 结果解读
 
-### 未授权访问结果
+### 漏洞严重程度
 
-- **true**：高可能性未授权访问漏洞，包含敏感数据或置信度分数高
-- **unknown**：中等可能性，需要人工确认
-- **false**：低可能性，可能是正常行为
+- **高危险**：置信度分数 ≥ 60，极有可能存在漏洞
+- **中危险**：置信度分数 45-59，可能存在漏洞
+- **低危险**：置信度分数 35-44，存在潜在风险
+- **信息**：置信度分数 < 35，可能是误报
 
-### 越权漏洞结果
+### 置信度评分规则
 
-- **true**：高可能性越权漏洞，不同身份可访问相同敏感数据
-- **unknown**：需要人工确认，AI分析结果不确定
-- **false**：低可能性，不存在越权问题
+评分由以下规则组成：
 
-## 最佳实践
+1. **包含敏感数据**：+55 分（例如手机号、身份证等）
+2. **成功状态码**：+15 分（状态码为 2xx）
+3. **JSON 响应**：+10 分（响应为有效的 JSON 格式）
+4. **相似响应长度**：+10 分（与原始响应长度相近）
+5. **API 端点**：+10 分（URL 为典型的 API 端点）
 
-1. 在测试环境中使用，减少对生产环境的影响
-2. 使用独立的测试账户，避免实际用户数据泄露
-3. 优先关注高置信度的漏洞报告
-4. 结合人工分析，确认漏洞的实际影响
-5. 定期更新配置文件中的敏感数据模式，提高检测准确率
+### 敏感数据分类
+
+AIFuzzing 可检测多种敏感数据，包括但不限于：
+
+- 中国手机号码
+- 电子邮箱地址
+- 中国身份证号
+- 银行卡号
+- 用户名/密码
+- API 密钥/Token
 
 ## 常见问题
 
-### HTTPS证书问题
+### 无法截获 HTTPS 请求
 
-- 确保正确安装了mitmproxy证书
-- 对于Chrome，可启用`chrome://flags`中的`Allow invalid certificates for resources loaded from localhost`
-- 对于Android设备，需要将证书安装到系统证书存储区
+- 确认已正确安装并信任 HTTPS 证书
+- 对于 macOS，确保在钥匙串中将证书设置为"始终信任"
+- 对于 iOS/Android 设备，确保已在设备设置中信任该证书
 
-### 检测灵敏度调整
+### 响应体过大导致内存问题
 
-- 调整置信度阈值和规则权重
-- 添加特定URL到`excludePatterns`排除不需要检测的端点
-- 优化`sensitiveDataPatterns`适应业务数据特征
+- 调整配置文件中的 `proxy.streamLargeBodies` 值
+- 默认配置为 100KB，可根据系统内存适当调整
 
-## 贡献与支持
+### 误报太多
 
-欢迎提交Issues和Pull Requests来完善本工具。详情请参阅[贡献指南](CONTRIBUTING.md)。
+- 调整 `unauthorizedScan.highConfidenceScore` 提高置信度要求
+- 编辑 `unauthorizedScan.sensitiveDataPatterns` 优化敏感数据识别规则
+- 将特定 URL 添加到 `unauthorizedScan.excludePatterns` 中排除
+
+### 检测不到敏感数据
+
+- 检查 `sensitiveDataPatterns` 配置，确保模式匹配目标敏感数据
+- 使用更准确的正则表达式模式
+- 对于大于 10MB 的响应，系统只检查前 10MB 内容，可能会遗漏后续内容中的敏感数据
+
+## 开发贡献
+
+欢迎贡献代码，提交问题或建议。请遵循以下步骤：
+
+1. Fork 仓库
+2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add some amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 打开 Pull Request
 
 ## 许可证
 
-本项目采用MIT许可证 - 查看[LICENSE](LICENSE)文件了解详情。
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+
+## 免责声明
+
+AIFuzzing 仅用于合法的安全测试和研究目的。用户必须获得测试目标系统的授权，且需遵守当地法律法规。开发者对因滥用本工具导致的任何损失不承担责任。

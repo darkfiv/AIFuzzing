@@ -17,18 +17,15 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 	"yuequanScan/AIAPIS"
 	"yuequanScan/config"
-	_ "yuequanScan/similarity"
 	"yuequanScan/utils"
+	_ "yuequanScan/similarity"
+	
 
 	"github.com/lqqyt2423/go-mitmproxy/proxy"
-	_ "golang.org/x/text/encoding"
-	_ "golang.org/x/text/encoding/charmap"
-	_ "golang.org/x/text/encoding/japanese"
-	_ "golang.org/x/text/encoding/korean"
-	_ "golang.org/x/text/encoding/simplifiedchinese"
-	_ "golang.org/x/text/transform"
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 // 漏洞类型
@@ -70,15 +67,6 @@ var (
 
 	// 配置对象
 	conf = config.GetConfig()
-
-	// 敏感数据检测的正则表达式
-	idCardPattern   *regexp.Regexp
-	namePattern     *regexp.Regexp
-	phonePattern    *regexp.Regexp
-	addressPattern  *regexp.Regexp
-	emailPattern    *regexp.Regexp
-	bankCardPattern *regexp.Regexp
-
 	// ... existing variables ...
 	whitelistDomains       = make(map[string]bool)
 	whitelistMutex         sync.RWMutex
@@ -101,13 +89,6 @@ const (
 	StatusNumCompleted   // 处理完成
 	StatusNumError       // 处理出错
 )
-
-// 请求处理失败原因
-type FailReason struct {
-	Reason    string    // 失败原因
-	Timestamp time.Time // 失败时间
-	Count     int       // 失败次数
-}
 
 // LoadWhitelist 从whitelist.txt加载白名单域名
 func LoadWhitelist() error {
@@ -217,7 +198,6 @@ func IsWhitelisted(hostname string) bool {
 // 初始化扫描服务
 func InitScanService() {
 	// 初始化敏感数据检测的模式
-	setupPatterns()
 
 	// 加载白名单
 	if err := LoadWhitelist(); err != nil {
@@ -464,6 +444,7 @@ func processCompletedRequests() (processed int, skipped int, filtered int, stati
 				return true
 			}
 		}
+		
 
 		processed++
 		return true
@@ -695,6 +676,11 @@ func detectUnauthorizedAccess(r *RequestResponseLog) (*Result, error) {
 		},
 	}
 
+	// 确保设置正确的请求头
+	if req2.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
+		req2.Header.Set("Accept", "application/json; charset=utf-8")
+	}
+
 	// 增强发送未授权请求前的调试输出
 	utils.Debug("[未授权检测] 准备发送未授权请求:")
 	utils.Debug("  - 方法: %s", req2.Method)
@@ -721,6 +707,26 @@ func detectUnauthorizedAccess(r *RequestResponseLog) (*Result, error) {
 		return nil, err
 	}
 
+	// 处理编码问题
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "application/json") && req2.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
+		// 确保JSON响应使用UTF-8编码
+		utils.Debug("[未授权检测] 检测到application/x-www-form-urlencoded请求但返回JSON响应，处理编码")
+
+		// 尝试检测并修复编码问题
+		if !utf8.Valid(respBody) {
+			utils.Warning("[未授权检测] 检测到非UTF-8编码的JSON响应，尝试转换")
+
+			// 导入 golang.org/x/text/encoding/simplifiedchinese 包已在文件开头
+			// 这里假设可能是GBK编码，实际使用中可能需要更精确的检测
+			utf8Body, err := simplifiedchinese.GBK.NewDecoder().Bytes(respBody)
+			if err == nil {
+				respBody = utf8Body
+				utils.Info("[未授权检测] 成功将响应体从GBK转换为UTF-8")
+			}
+		}
+	}
+
 	// 设置未授权响应头
 	vulnResult.HeaderB = formatHeaders(resp.Header)
 
@@ -733,7 +739,7 @@ func detectUnauthorizedAccess(r *RequestResponseLog) (*Result, error) {
 	// 检测敏感数据并添加到结果
 	if conf.UnauthorizedScan.SensitiveDataPatterns.Enabled {
 		sensitivePatterns := make(map[string]string)
-		for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.Patterns {
+		for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.JsonPatterns {
 			sensitivePatterns[pattern.Name] = pattern.Pattern
 		}
 
@@ -747,10 +753,10 @@ func detectUnauthorizedAccess(r *RequestResponseLog) (*Result, error) {
 	}
 
 	// 根据置信度分数设置结果
-	if score >= 80 {
+	if score >= conf.UnauthorizedScan.HighConfidenceScore {
 		vulnResult.Result = "true"
 		vulnResult.Reason = fmt.Sprintf("高置信度未授权访问 (分数: %d, 原因: %v)", score, reasons)
-	} else if score >= 60 {
+	} else if score >= conf.UnauthorizedScan.MediumConfidenceScore {
 		vulnResult.Result = "unknown"
 		vulnResult.Reason = fmt.Sprintf("中等置信度未授权访问 (分数: %d, 原因: %v)", score, reasons)
 	} else {
@@ -832,154 +838,6 @@ func contains(slice []string, str string) bool {
 	return false
 }
 
-// 比较两个响应并提取差异
-func compareResponses(respA, respB string) []string {
-	// 简单的情况：两个响应完全相同
-	if respA == respB {
-		return nil
-	}
-
-	differences := []string{}
-
-	// 尝试解析为JSON进行结构化比较
-	var jsonA, jsonB interface{}
-	jsonAErr := json.Unmarshal([]byte(respA), &jsonA)
-	jsonBErr := json.Unmarshal([]byte(respB), &jsonB)
-
-	if jsonAErr == nil && jsonBErr == nil {
-		// 两者都是有效的JSON，进行结构化比较
-		diffs := compareJSON(jsonA, jsonB, "")
-		if len(diffs) > 0 {
-			differences = append(differences, diffs...)
-		}
-	} else {
-		// 至少一个不是有效的JSON，执行文本比较
-		// 按行分割并比较
-		linesA := strings.Split(respA, "\n")
-		linesB := strings.Split(respB, "\n")
-
-		// 长度差异
-		if len(linesA) != len(linesB) {
-			differences = append(differences, fmt.Sprintf("响应行数不同: 原始=%d行, The unauthorized request returned a response with %d lines of content.", len(linesA), len(linesB)))
-		}
-
-		// 逐行比较(限制比较的行数，避免过多的差异)
-		maxLines := min(len(linesA), len(linesB))
-		maxLinesToCheck := min(maxLines, 10) // 最多检查10行
-
-		for i := 0; i < maxLinesToCheck; i++ {
-			if linesA[i] != linesB[i] {
-				differences = append(differences, fmt.Sprintf("第%d行不同:\n  原始: %s\n  未授权: %s",
-					i+1, truncateString(linesA[i], 100), truncateString(linesB[i], 100)))
-			}
-		}
-
-		// 如果有太多的差异，只显示摘要
-		if maxLines > maxLinesToCheck {
-			differences = append(differences, fmt.Sprintf("（为简洁起见，只显示前%d行的差异）", maxLinesToCheck))
-		}
-	}
-
-	return differences
-}
-
-// 比较两个JSON对象并返回差异
-func compareJSON(a, b interface{}, path string) []string {
-	differences := []string{}
-
-	// 根据类型进行比较
-	switch aTyped := a.(type) {
-	case map[string]interface{}:
-		// 如果a是对象
-		if bTyped, ok := b.(map[string]interface{}); ok {
-			// b也是对象，逐个比较键
-			for k, aVal := range aTyped {
-				newPath := path
-				if path != "" {
-					newPath += "."
-				}
-				newPath += k
-
-				if bVal, exists := bTyped[k]; exists {
-					// 键在两个对象中都存在，递归比较值
-					diffs := compareJSON(aVal, bVal, newPath)
-					differences = append(differences, diffs...)
-				} else {
-					// 键在b中不存在
-					differences = append(differences, fmt.Sprintf("键 '%s' 在未授权响应中不存在", newPath))
-				}
-			}
-
-			// 检查b中有而a中没有的键
-			for k := range bTyped {
-				newPath := path
-				if path != "" {
-					newPath += "."
-				}
-				newPath += k
-
-				if _, exists := aTyped[k]; !exists {
-					differences = append(differences, fmt.Sprintf("键 '%s' 在未授权响应中新增", newPath))
-				}
-			}
-		} else {
-			// 类型不匹配
-			differences = append(differences, fmt.Sprintf("路径 '%s' 类型不匹配: 原始=对象, 未授权=%T", path, b))
-		}
-
-	case []interface{}:
-		// 如果a是数组
-		if bTyped, ok := b.([]interface{}); ok {
-			// b也是数组
-			if len(aTyped) != len(bTyped) {
-				differences = append(differences, fmt.Sprintf("数组 '%s' 长度不同: 原始=%d, 未授权=%d",
-					path, len(aTyped), len(bTyped)))
-			}
-
-			// 比较数组元素，最多比较10个以避免太多差异
-			minLen := min(len(aTyped), len(bTyped))
-			maxCheck := min(minLen, 10)
-
-			for i := 0; i < maxCheck; i++ {
-				itemPath := fmt.Sprintf("%s[%d]", path, i)
-				diffs := compareJSON(aTyped[i], bTyped[i], itemPath)
-				differences = append(differences, diffs...)
-			}
-
-			if minLen > maxCheck {
-				differences = append(differences, fmt.Sprintf("（为简洁起见，只检查数组 '%s' 的前%d个元素）", path, maxCheck))
-			}
-		} else {
-			// 类型不匹配
-			differences = append(differences, fmt.Sprintf("路径 '%s' 类型不匹配: 原始=数组, 未授权=%T", path, b))
-		}
-
-	default:
-		// 基本类型直接比较
-		if a != b {
-			// 限制值的长度，避免差异过长
-			aStr := fmt.Sprintf("%v", a)
-			bStr := fmt.Sprintf("%v", b)
-
-			aDisplay := truncateString(aStr, 50)
-			bDisplay := truncateString(bStr, 50)
-
-			differences = append(differences, fmt.Sprintf("值 '%s' 不同: 原始=%s, 未授权=%s",
-				path, aDisplay, bDisplay))
-		}
-	}
-
-	return differences
-}
-
-// 截断字符串，添加省略号
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}
-
 // min函数返回两个整数中的较小值
 func min(a, b int) int {
 	if a < b {
@@ -1023,6 +881,7 @@ func detectSensitiveDataWithDetails(respBody string, patterns map[string]string)
 	// 遍历所有正则表达式模式
 	for name, patternStr := range patterns {
 		// 错误恢复，确保一个正则表达式的问题不会影响整体检测
+		utils.Warning("[正则调试输出] name : %s -> pattern : %s", name, patternStr)
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -1081,12 +940,6 @@ func detectSensitiveDataWithDetails(respBody string, patterns map[string]string)
 
 	utils.Warning("[敏感数据检测] 检测完成，发现 %d 种类型的敏感数据", len(result))
 	return result
-}
-
-// 对敏感值进行掩码处理 - 现在仅返回原始值，不进行掩码
-func maskSensitiveValue(value string, dataType string) string {
-	// 直接返回原始值，不进行任何掩码处理
-	return value
 }
 
 // isValidMatch 额外验证匹配结果是否有效，减少误报
@@ -1233,7 +1086,7 @@ func calculateConfidenceScore(r *RequestResponseLog, respBody []byte, resp *http
 
 	if conf.UnauthorizedScan.SensitiveDataPatterns.Enabled {
 		sensitivePatterns := make(map[string]string)
-		for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.Patterns {
+		for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.JsonPatterns {
 			sensitivePatterns[pattern.Name] = pattern.Pattern
 		}
 
@@ -1447,25 +1300,6 @@ func isNotSuffix(path string, suffixes []string) bool {
 	return true
 }
 
-// containsString 检查字符串是否包含指定子串
-func containsString(s string, substrings []string) bool {
-	if s == "" {
-		return false
-	}
-
-	lowerS := strings.ToLower(s)
-
-	for _, substring := range substrings {
-		substring = strings.ToLower(substring)
-		if strings.Contains(lowerS, substring) {
-			utils.Debug("[内容检查] Content-Type匹配过滤规则: %s, 规则=%s", s, substring)
-			return true
-		}
-	}
-
-	return false
-}
-
 // processHighPriorityRequests 处理高优先级请求
 func processHighPriorityRequests() {
 	// 优先处理需要先认证的请求
@@ -1488,11 +1322,9 @@ func processHighPriorityRequests() {
 		// 判断是否是高优先级请求
 		// 例如：登录、认证、重要API等
 		path := strings.ToLower(r.Request.URL.Path)
-		isHighPriority := strings.Contains(path, "/login") ||
-			strings.Contains(path, "/auth") ||
+		isHighPriority := strings.Contains(path, "/auth") ||
 			strings.Contains(path, "/token") ||
 			strings.Contains(path, "/user") ||
-			strings.Contains(path, "/signin") ||
 			r.Request.Method == "POST"
 
 		if isHighPriority && r.Response != nil && r.Response.StatusCode == 200 {
@@ -1508,32 +1340,6 @@ func processHighPriorityRequests() {
 					processingFlag.Delete(key)
 					// 不在这里设置Processed标志，改为在扫描完成后设置
 				}()
-
-				// 进行特殊处理，例如存储令牌、Cookie等
-				if strings.Contains(path, "/login") || strings.Contains(path, "/auth") {
-					utils.Debug("[认证请求] 处理可能包含认证信息的请求: %s", r.Request.URL.String())
-
-					// 检查响应头，可能包含认证信息
-					authHeaders := []string{"Set-Cookie", "Authorization", "Token", "JWT"}
-					for _, header := range authHeaders {
-						if value := r.Response.Header.Get(header); value != "" {
-							utils.Debug("[认证信息] 发现可能的认证头: %s = %s", header, utils.TruncateString(value, 30))
-						}
-					}
-
-					// 检查响应体，可能包含认证信息
-					if r.Response.Body != nil {
-						utils.Debug("[认证信息] 响应体长度: %d 字节", len(r.Response.Body))
-					}
-				}
-
-				//// 使用统一过滤函数判断是否需要进行安全扫描
-				//shouldScan, skipReason := shouldScanRequest(r)
-				//if !shouldScan {
-				//	utils.Debug("[优先处理] 跳过扫描: %s, 原因: %s", r.Request.URL.String(), skipReason)
-				//	r.Processed = true
-				//	return
-				//}
 
 				// 获取配置
 				conf := config.GetConfig()
@@ -1983,328 +1789,6 @@ func handleConnectRequests() {
 	}
 }
 
-// setupPatterns 初始化敏感数据检测的正则表达式
-func setupPatterns() {
-	var err error
-
-	// 使用双引号替代反引号，避免Unicode转义问题
-	// 中文姓名模式 - 2-4个汉字
-	namePattern, err = regexp.Compile("[\\x{4e00}-\\x{9fa5}]{2,4}(先生|女士|小姐|同学|老师|教授|医生|博士)?")
-	if err != nil {
-		utils.Warning("[敏感数据检测] 编译姓名正则表达式失败: %v", err)
-	}
-
-	// 身份证号模式 - 更精确的身份证匹配，检查省份编码规则
-	idCardPattern, err = regexp.Compile(`(([1-9]\d{5})(18|19|20)(\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(\d{3}[0-9Xx]))|(([1-9]\d{5})(\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(\d{3}))`)
-	if err != nil {
-		utils.Warning("[敏感数据检测] 编译身份证正则表达式失败: %v", err)
-	}
-
-	// 手机号模式 - 更精确的手机号匹配模式，避免误报
-	// 使用断言确保前后不是数字，避免匹配长数字序列中的子串
-	phonePattern, err = regexp.Compile(`(?<!\d)1[3-9]\d{9}(?!\d)`)
-	if err != nil {
-		utils.Warning("[敏感数据检测] 编译手机号正则表达式失败: %v", err)
-	}
-
-	// 地址模式 - 包含省市县区路街号的地址
-	addressPattern, err = regexp.Compile("[\\x{4e00}-\\x{9fa5}]{2,}(省|市|县|区|路|街|号)")
-	if err != nil {
-		utils.Warning("[敏感数据检测] 编译地址正则表达式失败: %v", err)
-	}
-
-	// 电子邮件模式
-	emailPattern, err = regexp.Compile("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}")
-	if err != nil {
-		utils.Warning("[敏感数据检测] 编译电子邮件正则表达式失败: %v", err)
-	}
-
-	// 银行卡号模式 - 16到19位数字
-	bankCardPattern, err = regexp.Compile("\\b\\d{16,19}\\b")
-	if err != nil {
-		utils.Warning("[敏感数据检测] 编译银行卡正则表达式失败: %v", err)
-	}
-}
-
-// 计算字符串中可能的乱码率
-func calculateContaminationRate(s string) float64 {
-	if len(s) == 0 {
-		return 0
-	}
-
-	invalidCount := 0
-	totalCount := 0
-
-	// 遍历字符串中的每个符文（Unicode字符）
-	for _, r := range s {
-		totalCount++
-
-		// 检查是否是控制字符（除了常见的如换行、制表符外）
-		if unicode.IsControl(r) &&
-			r != '\n' && r != '\r' && r != '\t' {
-			invalidCount++
-			continue
-		}
-
-		// 检查是否是不可打印字符或私有使用区域字符
-		if !unicode.IsPrint(r) ||
-			(r >= 0xE000 && r <= 0xF8FF) || // 私有使用区
-			(r >= 0xF0000 && r <= 0x10FFFF) { // 补充私有使用区
-			invalidCount++
-			continue
-		}
-
-		// 检查是否是替换字符（通常表示解码失败）
-		if r == unicode.ReplacementChar {
-			invalidCount++
-			continue
-		}
-	}
-
-	return float64(invalidCount) / float64(totalCount)
-}
-
-// 递归提取JSON中的所有字符串值
-func extractJSONStringValues(data interface{}) []string {
-	var result []string
-
-	// 添加更多调试输出
-	utils.Debug("[敏感数据检测-JSON] 提取字符串值，数据类型: %T", data)
-
-	switch v := data.(type) {
-	case string:
-		// 找到字符串值
-		result = append(result, v)
-		utils.Debug("[敏感数据检测-JSON] 提取到字符串值: %s", v)
-	case map[string]interface{}:
-		// 对象，递归处理所有值
-		utils.Debug("[敏感数据检测-JSON] 处理对象，键数量: %d", len(v))
-		for key, value := range v {
-			utils.Debug("[敏感数据检测-JSON] 处理对象字段: %s", key)
-			stringValues := extractJSONStringValues(value)
-			result = append(result, stringValues...)
-
-			// 直接也将键考虑为可能的字符串值
-			result = append(result, key)
-		}
-	case []interface{}:
-		// 数组，递归处理所有元素
-		utils.Debug("[敏感数据检测-JSON] 处理数组，元素数量: %d", len(v))
-		for i, item := range v {
-			utils.Debug("[敏感数据检测-JSON] 处理数组元素 #%d", i)
-			stringValues := extractJSONStringValues(item)
-			result = append(result, stringValues...)
-		}
-	case float64:
-		// 将数值转换为字符串也检查（可能有些数值看起来像电话号码）
-		strVal := fmt.Sprintf("%v", v)
-		result = append(result, strVal)
-		utils.Debug("[敏感数据检测-JSON] 将数值转换为字符串: %s", strVal)
-	case bool:
-		// 将布尔值转换为字符串
-		strVal := fmt.Sprintf("%v", v)
-		result = append(result, strVal)
-	case nil:
-		// 忽略空值
-		utils.Debug("[敏感数据检测-JSON] 忽略空值")
-	default:
-		// 处理其他类型，转换为字符串
-		strVal := fmt.Sprintf("%v", v)
-		result = append(result, strVal)
-		utils.Debug("[敏感数据检测-JSON] 转换未知类型为字符串: %s (%T)", strVal, v)
-	}
-
-	return result
-}
-
-// 从JSON响应中提取并检测敏感数据
-func detectSensitiveDataInJSON(jsonStr string, patterns map[string]string) []string {
-	var result []string
-
-	utils.Warning("[敏感数据检测-JSON] 开始检测敏感数据，内容长度: %d", len(jsonStr))
-
-	// 记录JSON内容摘要，帮助调试
-	if len(jsonStr) > 200 {
-		utils.Debug("[敏感数据检测-JSON] JSON内容摘要: %s...", jsonStr[:200])
-	} else {
-		utils.Debug("[敏感数据检测-JSON] JSON内容: %s", jsonStr)
-	}
-
-	// 获取JSON专用的正则表达式
-	conf := config.GetConfig()
-	jsonPatterns := make(map[string]string)
-	if conf.UnauthorizedScan.SensitiveDataPatterns.JsonPatterns != nil {
-		for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.JsonPatterns {
-			jsonPatterns[pattern.Name] = pattern.Pattern
-			utils.Debug("[敏感数据检测-JSON] 使用JSON专用正则: %s = %s", pattern.Name, pattern.Pattern)
-		}
-	} else {
-		// 如果没有JSON专用正则，使用普通正则
-		jsonPatterns = patterns
-	}
-
-	// 预先检测常见时间戳字段，建立排除列表
-	timeFieldValues := extractTimeFieldValues(jsonStr)
-	utils.Debug("[敏感数据检测-JSON] 识别到 %d 个时间字段值用于排除", len(timeFieldValues))
-
-	// 用于记录每个类型的匹配数
-	typeCounts := make(map[string]int)
-
-	// 在字符串值中检测敏感信息
-	for name, patternStr := range jsonPatterns {
-		// 错误恢复，确保一个正则表达式的问题不会影响整体检测
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					utils.Warning("[敏感数据检测-JSON] 处理模式 %s 时发生错误: %v", name, r)
-				}
-			}()
-
-			pattern, err := regexp.Compile(patternStr)
-			if err != nil {
-				utils.Warning("[敏感数据检测-JSON] 编译正则表达式失败: %v", err)
-				return
-			}
-
-			utils.Debug("[敏感数据检测-JSON] 使用正则表达式 %s: %s", name, patternStr)
-
-			// 直接在整个JSON字符串中查找匹配项
-			matches := pattern.FindAllString(jsonStr, -1)
-
-			// 去重处理匹配项
-			uniqueMatches := make(map[string]bool)
-			for _, match := range matches {
-				// 如果是JSON模式中的匹配，去掉引号
-				if strings.HasPrefix(match, "\"") && strings.HasSuffix(match, "\"") {
-					// 去掉引号
-					cleanMatch := match[1 : len(match)-1]
-
-					// 排除误报：时间戳和其他常见的长数字字段
-					if name == "phone" {
-						// 检查是否是时间戳（13位或更长数字，且不符合手机号格式）
-						if len(cleanMatch) >= 13 && !isValidPhoneNumber(cleanMatch) {
-							utils.Debug("[敏感数据检测-JSON] 排除疑似时间戳数据: %s", cleanMatch)
-							continue
-						}
-
-						// 检查是否在预先提取的时间字段值列表中
-						if isInTimeValues(cleanMatch, timeFieldValues) {
-							utils.Debug("[敏感数据检测-JSON] 排除时间值列表中的数据: %s", cleanMatch)
-							continue
-						}
-
-						// 检查是否在一个常见的时间戳字段中
-						contextBefore := extractContext(jsonStr, match, 30, true)
-						if containsTimeFieldName(contextBefore) {
-							utils.Debug("[敏感数据检测-JSON] 排除时间字段中的数值: %s (上下文: %s)", cleanMatch, contextBefore)
-							continue
-						}
-
-						// 额外检查：时间戳格式检测
-						if isTimestampFormat(cleanMatch) {
-							utils.Debug("[敏感数据检测-JSON] 排除标准时间戳格式: %s", cleanMatch)
-							continue
-						}
-					}
-
-					uniqueMatches[cleanMatch] = true
-				} else {
-					// 非JSON匹配的情况，也需要检查是否为误报
-					if name == "phone" {
-						if len(match) >= 13 && !isValidPhoneNumber(match) {
-							utils.Debug("[敏感数据检测-JSON] 排除疑似时间戳数据: %s", match)
-							continue
-						}
-
-						// 检查是否在预先提取的时间字段值列表中
-						if isInTimeValues(match, timeFieldValues) {
-							utils.Debug("[敏感数据检测-JSON] 排除时间值列表中的数据: %s", match)
-							continue
-						}
-
-						// 额外检查：时间戳格式检测
-						if isTimestampFormat(match) {
-							utils.Debug("[敏感数据检测-JSON] 排除标准时间戳格式: %s", match)
-							continue
-						}
-					}
-					uniqueMatches[match] = true
-				}
-			}
-
-			// 记录匹配数量及样例
-			matchCount := len(uniqueMatches)
-			var matchSamples []string
-
-			for match := range uniqueMatches {
-				if len(matchSamples) < 5 {
-					matchSamples = append(matchSamples, match)
-				}
-			}
-
-			if matchCount > 0 {
-				typeCounts[name] = matchCount
-				patternDesc := getPatternDescription(name)
-				matchSummary := fmt.Sprintf("发现%s: %d处", patternDesc, matchCount)
-				if len(matchSamples) > 0 {
-					matchSummary += fmt.Sprintf("，样例: %s", strings.Join(matchSamples, ", "))
-				}
-				result = append(result, matchSummary)
-				utils.Warning("[敏感数据检测-JSON] 检测到 %s: %d 处", patternDesc, matchCount)
-			} else {
-				utils.Debug("[敏感数据检测-JSON] 未检测到 %s", name)
-			}
-		}()
-	}
-
-	utils.Warning("[敏感数据检测-JSON] 检测完成，发现 %d 种类型的敏感数据", len(result))
-	return result
-}
-
-// 预先提取所有时间相关字段的值
-func extractTimeFieldValues(jsonStr string) []string {
-	var timeValues []string
-
-	// 尝试解析JSON对象
-	var data interface{}
-	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
-		utils.Debug("[敏感数据检测-JSON] 提取时间字段值时解析JSON失败: %v", err)
-		return timeValues
-	}
-
-	// 提取所有字段及其值
-	fields := getJSONFields(data)
-
-	// 检查每个字段名是否为时间相关字段
-	for field, value := range fields {
-		if containsTimeFieldName(field) {
-			// 提取时间字段的值
-			switch v := value.(type) {
-			case string:
-				timeValues = append(timeValues, v)
-			case float64:
-				timeValues = append(timeValues, strconv.FormatFloat(v, 'f', 0, 64))
-			case int:
-				timeValues = append(timeValues, strconv.Itoa(v))
-			case int64:
-				timeValues = append(timeValues, strconv.FormatInt(v, 10))
-			}
-		}
-	}
-
-	return timeValues
-}
-
-// 检查值是否在时间字段值列表中
-func isInTimeValues(value string, timeValues []string) bool {
-	for _, tv := range timeValues {
-		if tv == value {
-			return true
-		}
-	}
-	return false
-}
-
 // 判断是否符合时间戳格式
 func isTimestampFormat(s string) bool {
 	// 检查UNIX时间戳格式 (10位或13位数字)
@@ -2365,30 +1849,6 @@ func isTimestampFormat(s string) bool {
 	return false
 }
 
-// 从字符串中提取匹配项前后的上下文
-func extractContext(text string, match string, contextSize int, before bool) string {
-	matchIndex := strings.Index(text, match)
-	if matchIndex == -1 {
-		return ""
-	}
-
-	if before {
-		// 提取匹配项前的上下文
-		startIndex := matchIndex - contextSize
-		if startIndex < 0 {
-			startIndex = 0
-		}
-		return text[startIndex:matchIndex]
-	} else {
-		// 提取匹配项后的上下文
-		endIndex := matchIndex + len(match) + contextSize
-		if endIndex > len(text) {
-			endIndex = len(text)
-		}
-		return text[matchIndex+len(match) : endIndex]
-	}
-}
-
 // 检查字符串是否包含时间相关的字段名
 func containsTimeFieldName(s string) bool {
 	timeFields := []string{
@@ -2439,85 +1899,6 @@ func getPatternDescription(name string) string {
 		return name
 	}
 }
-
-// 获取JSON对象中的所有字段名和值
-func getJSONFields(data interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
-
-	var extractFields func(data interface{}, prefix string)
-	extractFields = func(data interface{}, prefix string) {
-		switch v := data.(type) {
-		case map[string]interface{}:
-			for key, value := range v {
-				fieldName := key
-				if prefix != "" {
-					fieldName = prefix + "." + key
-				}
-				result[fieldName] = value
-				extractFields(value, fieldName)
-			}
-		case []interface{}:
-			for i, item := range v {
-				fieldName := fmt.Sprintf("%s[%d]", prefix, i)
-				extractFields(item, fieldName)
-			}
-		}
-	}
-
-	extractFields(data, "")
-	return result
-}
-
-// 判断是否是有效的手机号（对于中国手机号，必须是1开头的11位数字）
-func isValidPhoneNumber(s string) bool {
-	if len(s) != 11 {
-		return false
-	}
-	if s[0] != '1' {
-		return false
-	}
-	// 确保全部是数字
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// shouldScanRequest 统一过滤函数，判断请求是否需要进行安全扫描
-// 返回值: (是否应该扫描, 跳过原因)
-//func shouldScanRequest(r *RequestResponseLog) (bool, string) {
-//	if r == nil || r.Request == nil || r.Request.URL == nil {
-//		return false, "无效的请求对象"
-//	}
-//
-//	// 获取配置
-//	conf := config.GetConfig()
-//	if conf == nil {
-//		return false, "配置未初始化"
-//	}
-//
-//	// 检查是否为静态资源
-//	if !isNotSuffix(r.Request.URL.Path, conf.Suffixes) {
-//		return false, "静态资源文件"
-//	}
-//
-//	// 检查是否在排除路径中
-//	if isExcludedPath(r.Request.URL.Path, conf.UnauthorizedScan.ExcludePatterns) {
-//		return false, "排除路径"
-//	}
-//
-//	// 检查响应头
-//	if r.Response != nil {
-//		contentType := r.Response.Header.Get("Content-Type")
-//		if !contains(conf.AllowedRespHeaders, contentType) {
-//			return false, "不允许的响应类型"
-//		}
-//	}
-//
-//	return true, ""
-//}
 
 // detectPrivilegeEscalation 执行越权检测
 func detectPrivilegeEscalation(r *RequestResponseLog) (*Result, error) {
@@ -2579,37 +1960,42 @@ func detectPrivilegeEscalation(r *RequestResponseLog) (*Result, error) {
 	hasPrivilegePattern := false
 	matchedParam := ""
 
-	// 检查URL参数
-	for _, pattern := range conf.PrivilegeEscalationScan.ParamPatterns {
-		re, err := regexp.Compile(pattern)
-		if err != nil {
-			utils.Warning("[越权检测] 编译参数模式失败: %v, 模式=%s", err, pattern)
-			continue
-		}
+	// 如果配置了参数模式且启用了参数匹配
+	if len(conf.PrivilegeEscalationScan.ParamPatterns) > 0 {
+		for _, pattern := range conf.PrivilegeEscalationScan.ParamPatterns {
+			re, err := regexp.Compile(pattern)
+			utils.Debug("[越权检测] 正则表达式：%s", pattern)
+			if err != nil {
+				utils.Warning("[越权检测] 编译参数模式失败: %v, 模式=%s", err, pattern)
+				continue
+			}
 
-		// 检查URL中是否匹配
-		if re.MatchString(r.Request.URL.String()) {
-			hasPrivilegePattern = true
-			matchedParam = re.FindString(r.Request.URL.String())
-			utils.Debug("[越权检测] 在URL中匹配到越权参数: %s", matchedParam)
-			break
-		}
-
-		// 检查请求体中是否匹配
-		if len(r.Request.Body) > 0 {
-			if re.MatchString(string(r.Request.Body)) {
+			// 检查URL中是否匹配
+			if re.MatchString(r.Request.URL.String()) {
 				hasPrivilegePattern = true
-				matchedParam = re.FindString(string(r.Request.Body))
-				utils.Debug("[越权检测] 在请求体中匹配到越权参数: %s", matchedParam)
+				matchedParam = re.FindString(r.Request.URL.String())
+				utils.Debug("[越权检测] 在URL中匹配到越权参数: %s", matchedParam)
 				break
 			}
-		}
-	}
 
-	// 如果请求中不包含越权测试需要的参数模式，则跳过测试
-	if !hasPrivilegePattern {
-		utils.Debug("[越权检测] 请求不包含需要检测的越权参数模式: %s", r.Request.URL.String())
-		return nil, fmt.Errorf("请求不包含需要检测的越权参数模式")
+			// 检查请求体中是否匹配
+			if len(r.Request.Body) > 0 {
+				if re.MatchString(string(r.Request.Body)) {
+					hasPrivilegePattern = true
+					matchedParam = re.FindString(string(r.Request.Body))
+					utils.Debug("[越权检测] 在请求体中匹配到越权参数: %s", matchedParam)
+					break
+				}
+			}
+		}
+
+		// 如果配置了参数模式但请求中不包含匹配的参数，则跳过测试
+		if !hasPrivilegePattern {
+			utils.Debug("[越权检测] 请求不包含需要检测的越权参数模式: %s", r.Request.URL.String())
+			return nil, fmt.Errorf("请求不包含需要检测的越权参数模式")
+		}
+	} else {
+		utils.Debug("[越权检测] 未配置参数模式，将检测所有请求")
 	}
 
 	// 保存原始响应
@@ -2730,15 +2116,15 @@ func detectPrivilegeEscalation(r *RequestResponseLog) (*Result, error) {
 		// 准备检测敏感数据的工具
 		sensitivePatternsMap := make(map[string]*regexp.Regexp)
 
-		// 编译敏感数据正则表达式
-		for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.Patterns {
-			re, err := regexp.Compile(pattern.Pattern)
-			if err != nil {
-				utils.Warning("[越权检测] 编译敏感数据模式失败: %v, 模式=%s", err, pattern.Pattern)
-				continue
-			}
-			sensitivePatternsMap[pattern.Name] = re
-		}
+		//// 编译敏感数据正则表达式
+		//for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.Patterns {
+		//	re, err := regexp.Compile(pattern.Pattern)
+		//	if err != nil {
+		//		utils.Warning("[越权检测] 编译敏感数据模式失败: %v, 模式=%s", err, pattern.Pattern)
+		//		continue
+		//	}
+		//	sensitivePatternsMap[pattern.Name] = re
+		//}
 
 		// 检查JSON格式的敏感数据
 		for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.JsonPatterns {
@@ -2831,13 +2217,14 @@ func detectPrivilegeEscalation(r *RequestResponseLog) (*Result, error) {
 					utils.Info("[越权检测] 替换请求获取到与原始响应完全相同的敏感数据，可能是公开数据")
 
 					// 继续使用相似度判断
+					utils.Info("[越权检测] 响应体相似度 ->responseA: %s \n responseB: %s", respAStr, respBStr)
 					similarityScore := calculateResponseSimilarity(respAStr, respBStr)
 					utils.Info("[越权检测] 响应体相似度: %.2f", similarityScore)
 
 					if similarityScore >= conf.PrivilegeEscalationScan.SimilarityThreshold {
-						// 标记为需人工确认，因为敏感数据完全相同
+						// 标记为漏洞存在，因为敏感数据完全相同
 						vulnResult.Result = "true"
-						vulnResult.Reason = fmt.Sprintf("替换请求返回相同敏感数据且响应相似度高 (%.2f >= %.2f)，可能是公开API或存在越权，请人工确认",
+						vulnResult.Reason = fmt.Sprintf("替换请求返回相同敏感数据且响应相似度高 (%.2f >= %.2f)，极大可能存在越权，请人工复测确认",
 							similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold)
 					} else {
 						vulnResult.Result = "unknown"
@@ -2865,7 +2252,8 @@ func detectPrivilegeEscalation(r *RequestResponseLog) (*Result, error) {
 		// 设置API URL和Key
 		switch aiType {
 		case "deepseek":
-			apiUrl = "https://api.deepseek.com/v1/chat/completions"
+			// apiUrl = "https://api.deepseek.com/v1/chat/completions"
+			apiUrl = "https://oneai.17usoft.com/v1/chat/completions"
 			apiKey = conf.APIKeys.DeepSeek
 		case "kimi":
 			apiUrl = "https://api.moonshot.cn/v1/chat/completions"
@@ -2918,7 +2306,7 @@ func detectPrivilegeEscalation(r *RequestResponseLog) (*Result, error) {
 				} else {
 					// 没有敏感数据，标记为需人工确认
 					vulnResult.Result = "unknown"
-					vulnResult.Reason = fmt.Sprintf("替换请求响应与原始响应相似度较高 (%.2f >= %.2f)但未发现敏感数据，请人工确认",
+					vulnResult.Reason = fmt.Sprintf("替换请求响应与原始响应相似度较高 (%.2f >= %.2f)但未发现敏感数据，疑似公共接口，请人工确认",
 						similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold)
 				}
 			} else {
@@ -3077,7 +2465,6 @@ func calculateResponseSimilarity(respA, respB string) float64 {
 			for key := range mapB {
 				if strings.Contains(strings.ToLower(key), "error") ||
 					strings.Contains(strings.ToLower(key), "err") ||
-					strings.Contains(strings.ToLower(key), "msg") ||
 					strings.Contains(strings.ToLower(key), "message") {
 					utils.Info("[相似度计算] 响应JSON包含错误相关字段: %s", key)
 					return 0.0

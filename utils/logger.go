@@ -32,10 +32,10 @@ const (
 var (
 	logger       *log.Logger
 	logFile      *os.File
-	logLevel     string = LogDebug // 默认为调试级别
-	logDirectory       = "logs"    // 日志目录
-	logFilePath  = ""                 // 日志文件路径
-	colorMap     = map[string]string{ // 日志级别对应的颜色
+	logLevel     string = LogDebug           // 默认为调试级别
+	logDirectory        = "logs"             // 日志目录
+	logFilePath         = ""                 // 日志文件路径
+	colorMap            = map[string]string{ // 日志级别对应的颜色
 		LogDebug:   ColorBlue,
 		LogInfo:    ColorGreen,
 		LogWarning: ColorYellow,
@@ -49,9 +49,9 @@ func InitLogger(level string, enableFile bool) error {
 	if level == "" {
 		level = LogDebug
 	}
-	
+
 	level = strings.ToUpper(level)
-	
+
 	// 设置日志级别
 	switch level {
 	case LogDebug:
@@ -78,7 +78,7 @@ func InitLogger(level string, enableFile bool) error {
 
 		// 创建当天的日志文件
 		currentTime := time.Now().Format("2006-01-02")
-		logFilePath = filepath.Join(logDirectory, fmt.Sprintf("privhunter-%s.log", currentTime))
+		logFilePath = filepath.Join(logDirectory, fmt.Sprintf("AIFuzzing-%s.log", currentTime))
 		file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
 			return fmt.Errorf("打开日志文件失败: %v", err)
@@ -98,16 +98,16 @@ func Log(level string, format string, v ...interface{}) {
 	if !shouldLog(level) {
 		return
 	}
-	
+
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	msg := fmt.Sprintf(format, v...)
 	// 带颜色的日志级别
 	coloredLevel := fmt.Sprintf("%s[%s]%s", colorMap[level], level, ColorReset)
-	
+
 	// 输出到标准输出
 	logMsg := fmt.Sprintf("%s %s %s", timestamp, coloredLevel, msg)
 	logger.Println(logMsg)
-	
+
 	// 如果日志文件打开，记录到文件
 	if logFile != nil {
 		// 文件中不要颜色代码
@@ -153,4 +153,4 @@ func Close() {
 	if logFile != nil {
 		logFile.Close()
 	}
-} 
+}

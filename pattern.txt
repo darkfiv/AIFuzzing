@@ -1,0 +1,11 @@
+ "id=\\d+",
+      "userId=\\d+",
+      "user_id=\\d+",
+      "accountId=\\d+",
+      "account_id=\\d+",
+      "orderId=\\d+",
+      "order_id=\\d+",
+      "tid=\\d+",
+      "[mM][eE][mM][bB][eE][rR][iI][dD]=(?:I0_[A-Za-z0-9]{32}|[A-Za-z0-9]{32}|\\d{1,15})",
+      "[mM][iI][dD]=(?:I0_[A-Za-z0-9]{32}|[A-Za-z0-9]{32}|\\d{1,15})",
+      "\"[mM][eE][mM][bB][eE][rR][iI][dD]\"\\s*:\\s*\"(?:I0_[A-Za-z0-9]{32}|(?<!\\d)\\d{1,15}(?!\\d)|[A-Za-z0-9]{32})\""

@@ -52,11 +52,11 @@ func (rg *ReportGenerator) GenerateReport(format string) (string, error) {
 
 	// 根据格式生成报告
 	switch format {
-	case "JSON":
+	case "json":
 		return rg.generateJSONReport()
-	case "HTML":
+	case "html":
 		return rg.generateHTMLReport()
-	case "CSV":
+	case "csv":
 		return rg.generateCSVReport()
 	default:
 		return "", fmt.Errorf("不支持的报告格式: %s", format)
@@ -69,7 +69,7 @@ func (rg *ReportGenerator) generateJSONReport() (string, error) {
 
 	// 生成文件名
 	timestamp := time.Now().Format("20060102-150405")
-	filename := filepath.Join(rg.OutputDir, fmt.Sprintf("privhunter-report-%s.json", timestamp))
+	filename := filepath.Join(rg.OutputDir, fmt.Sprintf("AIFuzzing-report-%s.json", timestamp))
 
 	// 序列化为JSON
 	data, err := json.MarshalIndent(report, "", "  ")
@@ -91,7 +91,8 @@ func (rg *ReportGenerator) generateHTMLReport() (string, error) {
 
 	// 生成文件名
 	timestamp := time.Now().Format("20060102-150405")
-	filename := filepath.Join(rg.OutputDir, fmt.Sprintf("privhunter-report-%s.html", timestamp))
+	filename := filepath.Join(rg.OutputDir, fmt.Sprintf("AIFuzzing"+
+		"-report-%s.html", timestamp))
 
 	// HTML模板
 	htmlTemplate := `
@@ -483,7 +484,7 @@ func (rg *ReportGenerator) generateHTMLReport() (string, error) {
                                                         </div>
                                                     </div>
                                                     <div class="comparison-panel">
-                                                        <div class="comparison-header">未授权请求</div>
+                                                        <div class="comparison-header">未授权/越权请求</div>
                                                         <div class="comparison-content">
                                                             <pre class="language-http"><code>{{$result.Method}} {{$result.Url}}
 {{$result.HeaderB}}
@@ -513,7 +514,7 @@ func (rg *ReportGenerator) generateHTMLReport() (string, error) {
                                                         </div>
                                                     </div>
                                                     <div class="comparison-panel">
-                                                        <div class="comparison-header">未授权响应</div>
+                                                        <div class="comparison-header">未授权/越权响应</div>
                                                         <div class="comparison-content">
                                                             <pre class="language-json"><code>{{$result.RespBodyB}}</code></pre>
                                                         </div>
@@ -683,7 +684,7 @@ func (rg *ReportGenerator) generateHTMLReport() (string, error) {
 func (rg *ReportGenerator) generateCSVReport() (string, error) {
 	// 生成文件名
 	timestamp := time.Now().Format("20060102-150405")
-	filename := filepath.Join(rg.OutputDir, fmt.Sprintf("privhunter-report-%s.csv", timestamp))
+	filename := filepath.Join(rg.OutputDir, fmt.Sprintf("AIFuzzing-report-%s.csv", timestamp))
 
 	// 创建文件
 	file, err := os.Create(filename)
@@ -705,17 +706,17 @@ func (rg *ReportGenerator) generateCSVReport() (string, error) {
 	// 写入数据
 	for _, r := range rg.Results {
 		result := r.(map[string]interface{})
-		
+
 		var vulnType string
 		if vt, ok := result["vulnType"].(string); ok {
 			vulnType = vt
 		}
-		
+
 		var similarity string
 		if sim, ok := result["similarity"].(float64); ok {
 			similarity = fmt.Sprintf("%.2f", sim)
 		}
-		
+
 		row := []string{
 			result["result"].(string),
 			result["method"].(string),
@@ -724,7 +725,7 @@ func (rg *ReportGenerator) generateCSVReport() (string, error) {
 			similarity,
 			result["reason"].(string),
 		}
-		
+
 		if err := writer.Write(row); err != nil {
 			return "", fmt.Errorf("写入CSV行失败: %v", err)
 		}
@@ -741,9 +742,63 @@ func (rg *ReportGenerator) prepareReportData() Report {
 	var totalSafe int
 
 	for _, result := range rg.Results {
-		r := result.(map[string]interface{})
-		
-		switch r["result"].(string) {
+		// 确保结果是一个有效的 map[string]interface{}
+		r, ok := result.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// 确保所有必需的字段都存在
+		resultStr, ok := r["result"].(string)
+		if !ok {
+			continue
+		}
+
+		// 初始化必需的字段（如果不存在）
+		if _, ok := r["method"]; !ok {
+			r["method"] = ""
+		}
+		if _, ok := r["url"]; !ok {
+			r["url"] = ""
+		}
+		if _, ok := r["requestA"]; !ok {
+			r["requestA"] = ""
+		}
+		if _, ok := r["requestB"]; !ok {
+			r["requestB"] = ""
+		}
+		if _, ok := r["headerA"]; !ok {
+			r["headerA"] = ""
+		}
+		if _, ok := r["headerB"]; !ok {
+			r["headerB"] = ""
+		}
+		if _, ok := r["respBodyA"]; !ok {
+			r["respBodyA"] = ""
+		}
+		if _, ok := r["respBodyB"]; !ok {
+			r["respBodyB"] = ""
+		}
+		if _, ok := r["reason"]; !ok {
+			r["reason"] = ""
+		}
+		if _, ok := r["vulnType"]; !ok {
+			r["vulnType"] = ""
+		}
+		if _, ok := r["similarity"]; !ok {
+			r["similarity"] = 0.0
+		}
+		if _, ok := r["differences"]; !ok {
+			r["differences"] = []string{}
+		}
+		if _, ok := r["sensitiveData"]; !ok {
+			r["sensitiveData"] = []string{}
+		}
+		if _, ok := r["scanTime"]; !ok {
+			r["scanTime"] = time.Now().Format("2006-01-02 15:04:05")
+		}
+
+		switch resultStr {
 		case "true":
 			vulnerableResults = append(vulnerableResults, r)
 		case "unknown":
@@ -764,4 +819,4 @@ func (rg *ReportGenerator) prepareReportData() Report {
 		VulnerableResults: vulnerableResults,
 		UnknownResults:    unknownResults,
 	}
-} 
+}

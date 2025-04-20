@@ -37,7 +37,7 @@ AIFuzzing 是一款基于代理的被动式 Web 安全扫描工具，专注于�
 
 #### 预编译二进制文件（推荐）
 
-直接从 [Releases](https://github.com/yourusername/AIFuzzing/releases) 页面下载对应平台的二进制文件:
+直接从 [Releases](https://github.com/darkfiv/AIFuzzing/releases) 页面下载对应平台的二进制文件:
 
 - Windows: `AIFuzzing_windows_amd64.zip`
 - macOS: `AIFuzzing_macos_arm64.zip` (Apple Silicon) / `AIFuzzing_macos_amd64.zip` (Intel)

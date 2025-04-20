@@ -1,8 +1,18 @@
 # AIFuzzing
 
-AIFuzzing 是一款基于代理的被动式 Web 安全扫描工具，专注于检测未授权访问和越权漏洞。它通过拦截和分析应用程序流量，自动发现潜在的安全问题，帮助开发人员和安全研究人员提前识别并修复漏洞。
+<div align="center">
+  <p><strong>智能越权与未授权访问检测工具</strong></p>
+  <p>
+    <a href="#核心功能">功能</a> •
+    <a href="#安装指南">安装</a> •
+    <a href="#快速开始">快速开始</a> •
+    <a href="#配置详解">配置</a> •
+    <a href="#web-界面使用">使用</a> •
+    <a href="#更新日志">更新日志</a>
+  </p>
+</div>
 
-![AIFuzzing Logo](https://path-to-your-logo.png)
+AIFuzzing 是一款基于代理的被动式 Web 安全扫描工具，专注于检测未授权访问和越权漏洞。它通过拦截和分析应用程序流量，自动发现潜在的安全问题，帮助开发人员和安全研究人员提前识别并修复漏洞。
 
 ## 核心功能
 
@@ -21,18 +31,22 @@ AIFuzzing 是一款基于代理的被动式 Web 安全扫描工具，专注于�
 
 - 支持 Windows、macOS 和 Linux
 - 足够的内存处理并发请求（建议至少 4GB RAM）
+- Go 1.18+ (仅源码编译需要)
 
 ### 下载与安装
 
-#### 预编译二进制文件
+#### 预编译二进制文件（推荐）
 
 直接从 [Releases](https://github.com/yourusername/AIFuzzing/releases) 页面下载对应平台的二进制文件:
 
-- Windows: `aifuzz_win_amd64.exe` (x64) / `aifuzz_win_arm64.exe` (ARM)
-- macOS: `aifuzz_mac_amd64` (Intel) / `aifuzz_mac_arm64` (Apple Silicon)
-- Linux: `aifuzz_linux_amd64` (x64)
+- Windows: `AIFuzzing_windows_amd64.zip`
+- macOS: `AIFuzzing_macos_arm64.zip` (Apple Silicon) / `AIFuzzing_macos_amd64.zip` (Intel)
+- Linux: `AIFuzzing_linux_amd64.zip`
 
-
+下载后解压，包含以下文件：
+- 可执行文件 (`AIFuzzing` 或 `AIFuzzing.exe`)
+- 配置文件 (`config.json`)
+- Web界面文件 (`index.html`)
 
 ## 快速开始
 
@@ -40,18 +54,16 @@ AIFuzzing 是一款基于代理的被动式 Web 安全扫描工具，专注于�
 
 ```bash
 # Windows
-aifuzz_win_amd64.exe
+AIFuzzing.exe
 
 # macOS/Linux
-./aifuzz_mac_arm64
-# 或
-./aifuzz_linux_amd64
+./AIFuzzing
 ```
 
 默认使用配置文件 `config.json`，也可指定配置文件：
 
 ```bash
-./aifuzz -config my-config.json
+./AIFuzzing -config my-config.json
 ```
 
 2. **配置浏览器或应用程序代理**
@@ -61,9 +73,12 @@ aifuzz_win_amd64.exe
 3. **安装 HTTPS 证书**
 
 首次使用时需安装 HTTPS 证书：
-- 启动 AIFuzzing 后访问 `http://mitm.it`
-- 下载并安装对应系统的证书
-- 确保证书被操作系统和浏览器信任
+怎么安装mitmproxy证书大家自行百度吧，教程太多不细说了。
+
+对于 macOS 用户，可执行以下命令信任证书：
+```bash
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.mitmproxy/mitmproxy-ca-cert.pem
+```
 
 4. **访问 Web 界面查看结果**
 
@@ -83,7 +98,7 @@ AIFuzzing 使用 JSON 格式的配置文件，主要配置项如下：
 ```
 
 - `port`: 代理服务器监听端口
-- `streamLargeBodies`: 以字节为单位的大响应体阈值，超过此值使用流式处理（默认 10MB）
+- `streamLargeBodies`: 以字节为单位的大响应体阈值，超过此值使用流式处理（默认 100KB）
 
 ### 未授权访问扫描配置
 
@@ -153,66 +168,6 @@ AIFuzzing 使用 JSON 格式的配置文件，主要配置项如下：
 - `similarityThreshold`: 响应相似度阈值
 - `paramPatterns`: 用于识别可能触发越权漏洞的参数模式列表
 
-### 白名单配置
-
-```json
-"suffixes": [
-  ".js", ".css", ".ico", ".jpg", ".jpeg", ".png", ".gif"
-],
-"allowedRespHeaders": [
-  "image/png", "image/jpeg", "image/gif", "text/css", "application/javascript"
-]
-```
-
-- `suffixes`: 静态资源文件扩展名列表，这些请求将被忽略
-- `allowedRespHeaders`: 响应内容类型白名单列表，匹配这些类型的响应将被忽略
-
-### 性能调优
-
-```json
-"performance": {
-  "maxConcurrentScans": 10,
-  "scanTimeout": 15,
-  "requestTimeout": 5
-}
-```
-
-- `maxConcurrentScans`: 最大并发扫描数量
-- `scanTimeout`: 扫描超时时间（秒）
-- `requestTimeout`: 请求超时时间（秒）
-
-### 日志配置
-
-```json
-"log": {
-  "level": "debug",
-  "enableFile": true,
-  "directory": "logs"
-}
-```
-
-- `level`: 日志级别，可选值：debug, info, warning, error
-- `enableFile`: 是否启用文件日志
-- `directory`: 日志文件存储目录
-
-### 输出配置
-
-```json
-"output": {
-  "enableWebUI": true,
-  "webUIPort": 8222,
-  "enableReportFile": true,
-  "reportDirectory": "./reports",
-  "reportFormat": "html"
-}
-```
-
-- `enableWebUI`: 是否启用 Web 界面
-- `webUIPort`: Web 界面端口
-- `enableReportFile`: 是否启用报告文件生成
-- `reportDirectory`: 报告文件存储目录
-- `reportFormat`: 报告文件格式，支持 html, json, csv
-
 ### AI 辅助分析配置
 
 ```json
@@ -229,6 +184,7 @@ AIFuzzing 使用 JSON 格式的配置文件，主要配置项如下：
 
 - `AI`: 默认使用的 AI 模型
 - `apiKeys`: 各 AI 模型的 API 密钥配置
+
 
 ## 大响应处理机制
 
@@ -253,7 +209,7 @@ AIFuzzing 内置了高效的大响应处理机制：
 ## 命令行参数
 
 ```
-Usage: aifuzz [options]
+Usage: AIFuzzing [options]
 
 Options:
   -config string
@@ -275,7 +231,7 @@ Options:
 - **高危险**：置信度分数 ≥ 60，极有可能存在漏洞
 - **中危险**：置信度分数 45-59，可能存在漏洞
 - **低危险**：置信度分数 35-44，存在潜在风险
-- **信息**：置信度分数 < 35，可能是误报
+- **信息**：置信度分数 < 35, 可能是误报
 
 ### 置信度评分规则
 
@@ -286,17 +242,6 @@ Options:
 3. **JSON 响应**：+10 分（响应为有效的 JSON 格式）
 4. **相似响应长度**：+10 分（与原始响应长度相近）
 5. **API 端点**：+10 分（URL 为典型的 API 端点）
-
-### 敏感数据分类
-
-AIFuzzing 可检测多种敏感数据，包括但不限于：
-
-- 中国手机号码
-- 电子邮箱地址
-- 中国身份证号
-- 银行卡号
-- 用户名/密码
-- API 密钥/Token
 
 ## 常见问题
 
@@ -321,7 +266,31 @@ AIFuzzing 可检测多种敏感数据，包括但不限于：
 
 - 检查 `sensitiveDataPatterns` 配置，确保模式匹配目标敏感数据
 - 使用更准确的正则表达式模式
-- 对于大于 10MB 的响应，系统只检查前 10MB 内容，可能会遗漏后续内容中的敏感数据
+- 对于大响应，检查是否启用了流式处理和适当的截断策略
+
+## 更新日志
+
+### v1.0.0 (2024-06-15)
+- 首次发布
+- 支持未授权访问检测
+- 支持越权漏洞检测
+- 支持敏感数据识别
+- 支持AI辅助分析
+- 支持Web界面查看结果
+
+### v1.1.0 (2024-xx-xx) [计划中]
+- 改进大响应体处理机制
+- 增加对更多敏感数据类型的支持
+- 优化AI分析能力
+- 增强Web界面交互
+- 修复证书路径处理问题
+
+### v1.2.0 (2024-xx-xx) [计划中]
+- 添加主动扫描模式
+- 增加API接口
+- 支持导出更多格式的报告
+- 提供Docker部署方式
+- 优化性能和内存使用
 
 ## 开发贡献
 
@@ -340,3 +309,9 @@ AIFuzzing 可检测多种敏感数据，包括但不限于：
 ## 免责声明
 
 AIFuzzing 仅用于合法的安全测试和研究目的。用户必须获得测试目标系统的授权，且需遵守当地法律法规。开发者对因滥用本工具导致的任何损失不承担责任。
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ by AIFuzzing Team</sub>
+</div>

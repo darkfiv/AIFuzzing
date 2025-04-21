@@ -278,16 +278,6 @@ Options:
 - 支持AI辅助分析
 - 支持Web界面查看结果
 
-## 开发贡献
-
-欢迎贡献代码，提交问题或建议。请遵循以下步骤：
-
-1. Fork 仓库
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add some amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 打开 Pull Request
-
 ## 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件

@@ -148,6 +148,8 @@ AIFuzzing 使用 JSON 格式的配置文件，主要配置项如下：
 - `mediumConfidenceScore`: 中置信度分数阈值
 - `lowConfidenceScore`: 低置信度分数阈值
 
+### 若要退出程序，ctrl+c即可
+
 ### 越权漏洞扫描配置
 
 ```json

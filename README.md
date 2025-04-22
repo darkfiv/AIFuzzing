@@ -288,7 +288,8 @@ Options:
 ![image](https://github.com/user-attachments/assets/25a71ac0-01c9-4dc7-b673-5968ba2d6e3c)
 
 - 添加置信度打分细则，方便用户调试
-<img width="677" alt="image" src="https://github.com/user-attachments/assets/3409b3f1-618c-465a-8282-e88afdfb817d" />
+![image](https://github.com/user-attachments/assets/4b5a3a1a-86a6-4d19-93a8-30467e1ba6df)
+
 - 支持json/csv/xlsx结果导出，默认导出为.json格式
 
 

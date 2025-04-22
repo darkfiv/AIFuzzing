@@ -299,9 +299,6 @@ Options:
 
 - 支持json/csv/xlsx结果导出，默认导出为.json格式
 
-## 许可证
-
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
 
 ## 免责声明
 
@@ -310,5 +307,5 @@ AIFuzzing 仅用于合法的安全测试和研究目的。用户必须获得测�
 ---
 
 <div align="center">
-  <sub>Built with ❤️ by AIFuzzing Team</sub>
+  <sub>Built with ❤️ DarkFi5</sub>
 </div>

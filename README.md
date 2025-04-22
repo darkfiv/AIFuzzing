@@ -284,8 +284,11 @@ Options:
 - 支持Web界面查看结果
 
 ### v1.0.1 (2025-04-22)
-- 结果界面添加搜索框，支持url模糊搜索
+- 结果展示界面添加搜索框，支持url模糊搜索
+![image](https://github.com/user-attachments/assets/25a71ac0-01c9-4dc7-b673-5968ba2d6e3c)
+
 - 添加置信度打分细则，方便用户调试
+<img width="677" alt="image" src="https://github.com/user-attachments/assets/3409b3f1-618c-465a-8282-e88afdfb817d" />
 - 支持json/csv/xlsx结果导出，默认导出为.json格式
 
 

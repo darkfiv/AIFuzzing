@@ -1,6 +1,10 @@
 # AIFuzzing
 
 <div align="center">
+  <p>
+    <img src="https://img.shields.io/github/stars/darkfiv/AIFuzzing?style=social" alt="GitHub stars">
+    <a href="javascript:void(0)" onclick="toggleLanguage()" style="margin-left: 10px;">🌐 切换语言</a>
+  </p>
   <p><strong>智能越权与未授权访问检测工具</strong></p>
   <p>
     <a href="#核心功能">功能</a> •
@@ -8,11 +12,17 @@
     <a href="#快速开始">快速开始</a> •
     <a href="#配置详解">配置</a> •
     <a href="#web-界面使用">使用</a> •
-    <a href="#web-界面使用">入门使用教程</a> •
+    <a href="#入门使用教程">入门使用教程</a> •
     <a href="#更新日志">更新日志</a>
-    
   </p>
 </div>
+
+<script>
+function toggleLanguage() {
+    // 这里可以添加语言切换的逻辑
+    alert('语言切换功能即将上线！');
+}
+</script>
 
 AIFuzzing 是一款基于代理的被动式 Web 安全扫描工具，专注于检测未授权访问和越权漏洞。它通过拦截和分析应用程序流量，自动发现潜在的安全问题，帮助开发人员和安全研究人员提前识别并修复漏洞。
 
@@ -273,7 +283,11 @@ Options:
 - 对于大响应，检查是否启用了流式处理和适当的截断策略
 
 ## 入门使用教程
-[点击查看](https://github.com/darkfiv/AIFuzzing/blob/main/AIFuzzing%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.pdf)
+
+我们提供了详细的入门使用教程，帮助您快速上手 AIFuzzing：
+
+- [中文教程](https://github.com/darkfiv/AIFuzzing/blob/main/docs/tutorial_zh.md)
+- [English Tutorial](https://github.com/darkfiv/AIFuzzing/blob/main/docs/tutorial_en.md)
 
 ## 更新日志
 

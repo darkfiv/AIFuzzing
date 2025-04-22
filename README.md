@@ -292,7 +292,6 @@ Options:
 
 - 支持json/csv/xlsx结果导出，默认导出为.json格式
 
-
 ## 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件

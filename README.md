@@ -271,7 +271,7 @@ Options:
 - 对于大响应，检查是否启用了流式处理和适当的截断策略
 
 ## 入门使用教程
-[点击查看](https://github.com/darkfiv/darkfiv.github.io/blob/main/AIFuzzing%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.pdf)
+[点击查看](https://github.com/darkfiv/AIFuzzing/blob/main/AIFuzzing%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.pdf)
 
 ## 更新日志
 

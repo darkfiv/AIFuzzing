@@ -282,7 +282,7 @@ Options:
 
 我们提供了详细的入门使用教程，帮助您快速上手 AIFuzzing：
 
-- [中文教程](https://github.com/darkfiv/AIFuzzing/blob/main/AIFuzzing%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.pdf)
+- [中文教程](https://github.com/darkfiv/AIFuzzing/blob/main/AIFuzzing%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E4%B9%A6.pdf)
 
 ## 更新日志
 

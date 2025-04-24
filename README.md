@@ -289,15 +289,17 @@ Options:
 - 支持敏感数据识别
 - 支持AI辅助分析
 - 支持Web界面查看结果
+- url扫描去重，防止对同一个目标多次扫描
 
 ### v1.0.1 (2025-04-22)
 - 结果展示界面添加搜索框，支持url模糊搜索
-![image](https://github.com/user-attachments/assets/25a71ac0-01c9-4dc7-b673-5968ba2d6e3c)
-
 - 添加置信度打分细则，方便用户调试
-![image](https://github.com/user-attachments/assets/4b5a3a1a-86a6-4d19-93a8-30467e1ba6df)
-
 - 支持json/csv/xlsx结果导出，默认导出为.json格式
+
+### v1.0.2 (2025-04-24)
+- 优化内置越权漏洞扫描逻辑
+- 添加公共接口模糊过滤规则，路径包含关键字的请求均过滤【降误报，按个人需求开启】
+- 优化内置AI prompt提示，提高越权场景识别精准度
 
 
 ## 免责声明

@@ -270,7 +270,7 @@ Options:
 
 - 调整 `unauthorizedScan.highConfidenceScore` 提高置信度要求
 - 编辑 `unauthorizedScan.sensitiveDataPatterns` 优化敏感数据识别规则
-- 将特定 URL 添加到 `unauthorizedScan.excludePatterns` 中排除
+- 将关键字添加到 `unauthorizedScan.excludePatterns` 中进行过滤，采用模糊匹配方式过滤，包含关键字的api均过滤
 
 ### 检测不到敏感数据
 

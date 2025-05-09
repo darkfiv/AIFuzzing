@@ -44,6 +44,7 @@ type UnauthorizedScanConfig struct {
 	RemoveHeaders         []string            `json:"removeHeaders"`
 	SimilarityThreshold   float64             `json:"similarityThreshold"`
 	ExcludePatterns       []string            `json:"excludePatterns"`
+	ExcludeKeywords       []string            `json:"excludeKeywords"`
 	SensitiveDataPatterns SensitiveDataConfig `json:"sensitiveDataPatterns"`
 	// 新增置信度相关配置
 	UseConfidenceScore    bool             `json:"useConfidenceScore"`    // 是否使用置信度评分而非相似度
@@ -57,6 +58,7 @@ type UnauthorizedScanConfig struct {
 type PrivilegeEscalationScanConfig struct {
 	Enabled             bool     `json:"enabled"`             // 是否启用越权检测
 	SimilarityThreshold float64  `json:"similarityThreshold"` // 相似度阈值
+	IncludePatterns     []string `json:"includePatterns"`     // 包含模式
 	ParamPatterns       []string `json:"paramPatterns"`       // 参数模式
 	ExcludePatterns     []string `json:"excludePatterns"`     // 排除模式
 }
@@ -96,6 +98,7 @@ type ProxyConfig struct {
 // 配置结构
 type Config struct {
 	AI                 string            `json:"AI"`
+	EnableAI           bool              `json:"enableAI"`
 	Headers2           map[string]string `json:"headers2"`
 	Suffixes           []string          `json:"suffixes"`
 	AllowedRespHeaders []string          `json:"allowedRespHeaders"`
@@ -146,7 +149,7 @@ var Prompt = `{
       "similarityAnalysis": "使用字段对比和文本相似度计算（Levenshtein/Jaccard）评估内容相似度。",
       "errorKeywords": "检查responseB是否包含 'Access Denied'、'Permission Denied'、'403 Forbidden' 等错误信息，若有，则判定越权失败。",
       "emptyResponseHandling": "如果responseB返回null、[]、{}或HTTP 204，且responseA有数据，判定为权限受限（false）。",
-      "sensitiveDataDetection": "如果responseB包含敏感数据（如手机号、身份证号、邮箱、中文姓名、银行卡号等），判定为越权成功（true）。",
+      "sensitiveDataDetection": "如果responseB包含敏感数据（如手机号、身份证号、邮箱、中文姓名、银行卡号等），且敏感数据与响应A数据包的敏感数据基本一致，判定为越权成功（true）。",
       "consistencyCheck": "如果responseB和responseA结构一致但关键数据不同，判定可能是权限控制正确（false）。"
     },
     "judgmentCriteria": {
@@ -162,8 +165,8 @@ var Prompt = `{
     }
   },
   "notes": [
-    "仅输出 JSON 格式的结果，不添加任何额外文本或解释。",
-    "确保 JSON 格式正确，便于后续处理。",
+    "【一定注意】仅输出 JSON 格式的结果，不添加任何额外文本或解释。",
+    "【一定注意】确保 JSON 格式正确，便于后续处理。",
     "保持客观，仅根据响应内容进行分析。",
     "优先使用 HTTP 状态码、错误信息和数据结构匹配进行判断。",
     "重点关注敏感数据检测，如手机号、身份证号、邮箱、银行卡号等。",
@@ -174,7 +177,7 @@ var Prompt = `{
     "分析原始请求A，判断是否是无需鉴权的公共接口。",
     "提取并忽略动态字段（时间戳、随机数、会话ID）。",
     "对比HTTP状态码，403/401直接判定为false，500标记为unknown。",
-    "检查responseB是否包含敏感数据（如手机号、身份证号、邮箱、银行卡号），如果有，则判定为true。",
+    "检查responseB是否包含敏感数据（如手机号、身份证号、邮箱、银行卡号），如果有，且敏感数据与responseA的敏感数据基本一致，则判定为true。",
     "检查responseB是否返回错误信息（Access Denied / Forbidden），如果有，则判定为false。",
     "计算responseA和responseB的结构相似度，并使用Levenshtein编辑距离计算文本相似度，计算时忽略动态字段（如时间戳、随机数、会话ID、X-Request-ID等）。",
     "如果responseB内容为空（null、{}、[]），判断可能是权限受限，判定为false。",
@@ -246,7 +249,7 @@ func setDefaults() {
 		conf.Output.WebUIPort = 8222
 	}
 	if conf.Output.ReportFormat == "" {
-		conf.Output.ReportFormat = "JSON"
+		conf.Output.ReportFormat = "json"
 	}
 	if conf.Output.ReportDirectory == "" {
 		conf.Output.ReportDirectory = "reports"

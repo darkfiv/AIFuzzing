@@ -537,7 +537,12 @@
 
         /* URL列默认宽度 */
         .url-column {
-            width: 30%;
+            width: 25%;
+        }
+
+        /* 序号列默认宽度 */
+        .id-column {
+            width: 5%;
         }
 
         /* 方法列默认宽度 */
@@ -547,17 +552,22 @@
 
         /* 漏洞类型列默认宽度 */
         .vuln-type-column {
-            width: 12%;
+            width: 10%;
         }
 
         /* 状态列默认宽度 */
         .status-column {
-            width: 10%;
+            width: 8%;
+        }
+
+        /* 时间列默认宽度 */
+        .time-column {
+            width: 12%;
         }
 
         /* 详情列默认宽度 */
         .details-column {
-            width: 40%;
+            width: 32%;
         }
 
         /* 确保所有单元格内容不会溢出 */
@@ -755,6 +765,14 @@
             <div class="table-header">
                 <h2 class="section-title">漏洞扫描结果</h2>
                 <div class="filter-controls">
+                    <div class="input-group me-2" style="width: 250px;">
+                        <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="搜索URL...">
+                        <button class="btn btn-outline-secondary btn-sm" type="button" id="clearSearchBtn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-x" viewBox="0 0 16 16">
+                                <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+                            </svg>
+                        </button>
+                    </div>
                     <select id="filterVulnType" class="form-select form-select-sm me-2" style="width: 150px;">
                         <option value="">所有漏洞类型</option>
                         <option value="未授权访问">未授权访问</option>
@@ -766,9 +784,18 @@
                         <option value="unknown">需人工确认</option>
                         <option value="false">安全请求</option>
                     </select>
-                    <button id="exportBtn" class="btn btn-primary-custom btn-sm">
-                        <i class="bi bi-download"></i> 导出报告
-                    </button>
+                    <div class="download-section mb-2">
+                        <div class="dropdown">
+                            <button class="btn btn-primary-custom dropdown-toggle" type="button" id="exportBtn" data-bs-toggle="dropdown" aria-expanded="false">
+                                导出报告
+                            </button>
+                            <ul class="dropdown-menu" aria-labelledby="exportBtn">
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportReport('xlsx')">Excel格式 (.xlsx)</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportReport('json')">JSON格式 (.json)</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportReport('csv')">CSV格式 (.csv)</a></li>
+                            </ul>
+                        </div>
+                    </div>
             </div>
         </div>
 
@@ -815,24 +842,30 @@
         let pageSize = 10;
         let totalPages = 0;
 
-        // 页面加载完成后获取数据
-        document.addEventListener('DOMContentLoaded', () => {
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            // 获取结果数据
             fetchData();
-
-            // 修复刷新按钮事件绑定
+            
+            // 初始化导出按钮事件
+            document.getElementById('exportBtn').addEventListener('click', function() {
+                exportReport('json'); // 默认导出JSON格式
+            });
+            
+            // 为刷新按钮添加事件处理
             document.getElementById('refreshBtn').addEventListener('click', function() {
                 fetchData();
             });
-
-            // 绑定导出按钮事件
-            document.getElementById('exportBtn').addEventListener('click', exportReport);
-
-            // 绑定筛选事件 - 漏洞类型
+            
+            // 为筛选控件添加事件处理
             document.getElementById('filterVulnType').addEventListener('change', applyFilters);
-
-            // 绑定筛选事件 - 结果类型
             document.getElementById('filterResult').addEventListener('change', applyFilters);
-
+            document.getElementById('searchInput').addEventListener('input', applyFilters);
+            document.getElementById('clearSearchBtn').addEventListener('click', function() {
+                document.getElementById('searchInput').value = '';
+                applyFilters();
+            });
+            
             // 确保模态框正确初始化
             var vulnerabilityDetailModal = document.getElementById('vulnerabilityDetailModal');
             if (vulnerabilityDetailModal) {
@@ -862,7 +895,8 @@
                     updateStats(data);
                     renderResults(filterResults(data,
                         document.getElementById('filterVulnType').value,
-                        document.getElementById('filterResult').value));
+                        document.getElementById('filterResult').value,
+                        document.getElementById('searchInput').value));
                 })
                 .catch(error => {
                     console.error('获取数据失败:', error);
@@ -897,9 +931,18 @@
             document.getElementById('totalSafe').textContent = totalSafe;
         }
 
-        // 筛选结果函数，增加结果类型筛选
-        function filterResults(data, vulnType, resultType) {
+        // 筛选结果函数，增加URL搜索功能
+        function filterResults(data, vulnType, resultType, searchTerm) {
             let filtered = data;
+
+            // 按URL搜索筛选
+            if (searchTerm && searchTerm.trim() !== '') {
+                const searchLower = searchTerm.trim().toLowerCase();
+                filtered = filtered.filter(item => {
+                    if (!item.url) return false;
+                    return item.url.toLowerCase().includes(searchLower);
+                });
+            }
 
             // 按漏洞类型筛选
             if (vulnType) {
@@ -959,11 +1002,12 @@
         function applyFilters() {
             const vulnType = document.getElementById('filterVulnType').value;
             const resultType = document.getElementById('filterResult').value;
-            console.log('Applying filters:', { vulnType, resultType, currentPage, pageSize }); // 添加当前页和每页大小到日志
+            const searchTerm = document.getElementById('searchInput').value;
+            console.log('Applying filters:', { vulnType, resultType, searchTerm, currentPage, pageSize });
 
             // 获取筛选后的数据
-            const filteredData = filterResults(allResults, vulnType, resultType);
-            console.log('Filtered data:', filteredData.length, '条结果'); // 添加调试日志
+            const filteredData = filterResults(allResults, vulnType, resultType, searchTerm);
+            console.log('Filtered data:', filteredData.length, '条结果');
 
             // 渲染结果表格
             renderResults(filteredData);
@@ -984,9 +1028,16 @@
             // 获取当前应用的筛选条件
             const vulnType = document.getElementById('filterVulnType').value;
             const resultType = document.getElementById('filterResult').value;
+            const searchTerm = document.getElementById('searchInput').value;
 
             // 获取筛选后的完整数据集（用于计算总数）
             const totalFilteredData = allResults.filter(item => {
+                // URL搜索筛选
+                if (searchTerm && searchTerm.trim() !== '') {
+                    if (!item.url) return false;
+                    if (!item.url.toLowerCase().includes(searchTerm.trim().toLowerCase())) return false;
+                }
+                
                 // 漏洞类型筛选
                 if (vulnType && normalizeVulnType(item.vulnType) !== normalizeVulnType(vulnType)) {
                     return false;
@@ -1007,23 +1058,31 @@
                 <table class="custom-table">
                     <thead>
                         <tr>
-                            <th class="resizable url-column">
+                            <th class="resizable id-column" style="width: 5%;">
+                                序号
+                                <div class="resizer" data-column="id"></div>
+                            </th>
+                            <th class="resizable url-column" style="width: 25%;">
                                 URL
                                 <div class="resizer" data-column="url"></div>
                             </th>
-                            <th class="resizable method-column">
+                            <th class="resizable method-column" style="width: 8%;">
                                 方法
                                 <div class="resizer" data-column="method"></div>
                             </th>
-                            <th class="resizable vuln-type-column">
+                            <th class="resizable vuln-type-column" style="width: 10%;">
                                 漏洞类型
                                 <div class="resizer" data-column="vuln-type"></div>
                             </th>
-                            <th class="resizable status-column">
+                            <th class="resizable status-column" style="width: 8%;">
                                 状态
                                 <div class="resizer" data-column="status"></div>
                             </th>
-                            <th class="resizable details-column">
+                            <th class="resizable time-column" style="width: 12%;">
+                                发现时间
+                                <div class="resizer" data-column="time"></div>
+                            </th>
+                            <th class="resizable details-column" style="width: 32%;">
                                 详情
                                 <div class="resizer" data-column="details"></div>
                             </th>
@@ -1034,7 +1093,10 @@
 
             // 对数据按照时间倒序排序，最新的在最前面
             const sortedData = [...data].sort((a, b) => {
-                return new Date(b.timestamp || 0) - new Date(a.timestamp || 0);
+                // 优先使用scanTime字段，如果不存在则尝试使用timestamp
+                const dateA = a.scanTime ? new Date(a.scanTime) : (a.timestamp ? new Date(a.timestamp) : new Date(0));
+                const dateB = b.scanTime ? new Date(b.scanTime) : (b.timestamp ? new Date(b.timestamp) : new Date(0));
+                return dateB - dateA;
             });
 
             // 为每个结果项分配唯一的索引值作为ID
@@ -1074,10 +1136,12 @@
 
                 tableHTML += `
                     <tr data-id="${item.id}" data-url="${url}" class="result-row">
+                        <td>${displayIndex}</td>
                         <td title="${url}" class="url-cell">${displayUrl}</td>
                         <td>${item.method || ''}</td>
                         <td>${vulnTypeBadge}</td>
                         <td class="${statusClass}">${statusText}</td>
+                        <td>${item.scanTime ? new Date(item.scanTime).toLocaleString() : (item.timestamp ? new Date(item.timestamp).toLocaleString() : '未知')}</td>
                         <td>
                             <div class="d-flex align-items-center justify-content-between">
                                 <span class="reason-text text-truncate me-2">${item.reason || ''}</span>
@@ -1492,8 +1556,8 @@
                         .catch(() => {
                             console.error('复制失败');
                             alert('复制失败');
+                        });
                 });
-            });
             });
         }
 
@@ -1534,7 +1598,7 @@
                 // 如果是字符串格式的头部，直接添加
                 if (typeof headers === 'string') {
                     result += headers + '\n';
-                    } else {
+                } else {
                     // 如果是对象，按顺序添加关键请求头
                     const headerOrder = [
                         'Host',
@@ -1621,22 +1685,40 @@
         }
 
         // 修改导出报告函数为直接下载
-        function exportReport() {
+        function exportReport(format = 'xlsx') {
             // 显示加载状态
             const exportBtn = document.getElementById('exportBtn');
             const originalText = exportBtn.innerHTML;
             exportBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 生成中...';
             exportBtn.disabled = true;
 
-            fetch('/report/html')
-                .then(response => response.json())
+            console.log("正在导出" + format + "格式报告...");
+            
+            fetch('/report/' + format)
+                .then(response => {
+                    console.log("报告API响应状态:", response.status);
+                    return response.json();
+                })
                 .then(data => {
+                    console.log("报告API返回数据:", data);
                     if (data.filepath) {
+                        console.log("将下载文件:", data.filepath);
                         // 创建一个隐藏的a标签来触发下载
                         const link = document.createElement('a');
                         link.href = '/download-report?file=' + encodeURIComponent(data.filepath);
-                        link.download = 'vulnerability_report.html';
+                        
+                        // 设置下载文件名
+                        let filename = 'vulnerability_report';
+                        switch(format) {
+                            case 'xlsx': filename += '.xlsx'; break;
+                            case 'json': filename += '.json'; break;
+                            case 'csv': filename += '.csv'; break;
+                            default: filename += '.' + format;
+                        }
+                        link.download = filename;
+                        
                         document.body.appendChild(link);
+                        console.log("触发下载...");
                         link.click();
                         document.body.removeChild(link);
 
@@ -1644,6 +1726,7 @@
                         exportBtn.innerHTML = originalText;
                         exportBtn.disabled = false;
                     } else {
+                        console.error("报告生成失败:", data.error || "未知错误");
                         alert('报告生成失败: ' + (data.error || '未知错误'));
                         exportBtn.innerHTML = originalText;
                         exportBtn.disabled = false;

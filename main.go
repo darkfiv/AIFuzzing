@@ -183,15 +183,15 @@ func setupSignalHandler() {
 		}
 
 		// 生成报告
-		if reportGenerator != nil && config.GetConfig().Output.EnableReportFile {
-			format := config.GetConfig().Output.ReportFormat
-			utils.Info("正在生成最终报告，格式: %s", format)
-			if filepath, err := reportGenerator.GenerateReport(format); err != nil {
-				utils.Error("生成报告失败: %v", err)
-			} else {
-				utils.Info("报告已保存至: %s", filepath)
-			}
-		}
+		//if reportGenerator != nil && config.GetConfig().Output.EnableReportFile {
+		//	format := config.GetConfig().Output.ReportFormat
+		//	utils.Info("正在生成最终报告，格式: %s", format)
+		//	if filepath, err := reportGenerator.GenerateReport(format); err != nil {
+		//		utils.Error("生成报告失败: %v", err)
+		//	} else {
+		//		utils.Info("报告已保存至: %s", filepath)
+		//	}
+		//}
 
 		utils.Info("AIFuzzing 已安全关闭")
 		os.Exit(0)
@@ -258,29 +258,29 @@ func index(port int) {
 		Resp = append(Resp, newData)
 
 		// 同时添加到报告生成器
-	if reportGenerator != nil {
-		// 将 Result 结构体转换为 map[string]interface{}
-		resultMap := map[string]interface{}{
-			"method":        newData.Method,
-			"url":          newData.Url,
-			"requestA":     newData.RequestA,
-			"requestB":     newData.RequestB,
-			"headerA":      newData.HeaderA,
-			"headerB":      newData.HeaderB,
-			"respBodyA":    newData.RespBodyA,
-			"respBodyB":    newData.RespBodyB,
-			"result":       newData.Result,
-			"reason":       newData.Reason,
-			"vulnType":     newData.VulnType,
-			"similarity":   newData.Similarity,
-			"differences":  newData.Differences,
-			"sensitiveData": newData.SensitiveData,
-			"scanTime":     newData.ScanTime,
+		if reportGenerator != nil {
+			// 将 Result 结构体转换为 map[string]interface{}
+			resultMap := map[string]interface{}{
+				"method":        newData.Method,
+				"url":           newData.Url,
+				"requestA":      newData.RequestA,
+				"requestB":      newData.RequestB,
+				"headerA":       newData.HeaderA,
+				"headerB":       newData.HeaderB,
+				"respBodyA":     newData.RespBodyA,
+				"respBodyB":     newData.RespBodyB,
+				"result":        newData.Result,
+				"reason":        newData.Reason,
+				"vulnType":      newData.VulnType,
+				"similarity":    newData.Similarity,
+				"differences":   newData.Differences,
+				"sensitiveData": newData.SensitiveData,
+				"scanTime":      newData.ScanTime,
+			}
+			reportGenerator.AddResult(resultMap)
 		}
-		reportGenerator.AddResult(resultMap)
-	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "数据更新成功"})
+		c.JSON(http.StatusOK, gin.H{"message": "数据更新成功"})
 	})
 
 	r.POST("/filter", func(c *gin.Context) {
@@ -310,6 +310,41 @@ func index(port int) {
 			"unauthorized_access":  "未授权访问",
 		}
 		c.JSON(http.StatusOK, vulnTypes)
+	})
+
+	// 添加调试API
+	r.GET("/api/debug", func(c *gin.Context) {
+		utils.Info("[Debug API] 当前扫描结果数量: %d", len(Resp))
+
+		// 返回简洁的调试信息
+		debugInfo := map[string]interface{}{
+			"totalResults":   len(Resp),
+			"resultsPreview": []map[string]interface{}{},
+		}
+
+		// 添加结果预览（最多5个）
+		count := 0
+		for i, result := range Resp {
+			if count >= 5 {
+				break
+			}
+
+			preview := map[string]interface{}{
+				"index":        i,
+				"method":       result.Method,
+				"url":          result.Url,
+				"result":       result.Result,
+				"hasRequestA":  result.RequestA != "",
+				"hasRequestB":  result.RequestB != "",
+				"hasRespBodyA": result.RespBodyA != "",
+				"hasRespBodyB": result.RespBodyB != "",
+			}
+
+			debugInfo["resultsPreview"] = append(debugInfo["resultsPreview"].([]map[string]interface{}), preview)
+			count++
+		}
+
+		c.JSON(http.StatusOK, debugInfo)
 	})
 
 	// 添加扫描统计API
@@ -344,11 +379,13 @@ func index(port int) {
 
 		format := strings.ToLower(c.Param("format"))
 		if format == "" {
-			format = "html"
+			format = "xlsx"
 		}
 
+		utils.Info("[报告生成] 请求生成%s格式报告，当前结果数: %d", format, len(Resp))
+
 		// 检查支持的格式
-		supportedFormats := []string{"html", "json", "csv"} // 添加其他支持的格式
+		supportedFormats := []string{"json", "csv", "xlsx"} // 移除html支持
 		formatSupported := false
 		for _, supportedFormat := range supportedFormats {
 			if format == supportedFormat {
@@ -362,12 +399,67 @@ func index(port int) {
 			return
 		}
 
+		// 确保报告生成器包含所有当前扫描结果
+		// 创建一个新的reportGenerator以确保数据同步
+		reportGenerator = utils.NewReportGenerator(config.GetConfig().Output.ReportDirectory)
+		// 添加所有当前结果到reportGenerator
+		utils.Info("[报告生成] 添加结果到报告生成器，总数: %d", len(Resp))
+		addedCount := 0
+		for _, result := range Resp {
+			resultMap := map[string]interface{}{
+				"method":        result.Method,
+				"url":           result.Url,
+				"requestA":      result.RequestA,
+				"requestB":      result.RequestB,
+				"headerA":       result.HeaderA,
+				"headerB":       result.HeaderB,
+				"respBodyA":     result.RespBodyA,
+				"respBodyB":     result.RespBodyB,
+				"result":        result.Result,
+				"reason":        result.Reason,
+				"vulnType":      result.VulnType,
+				"similarity":    result.Similarity,
+				"differences":   result.Differences,
+				"sensitiveData": result.SensitiveData,
+				"scanTime":      result.ScanTime,
+			}
+			reportGenerator.AddResult(resultMap)
+			addedCount++
+		}
+		utils.Info("[报告生成] 已添加%d条结果到报告生成器", addedCount)
+
+		// 如果结果为空，添加一条示例数据以便于调试
+		if addedCount == 0 {
+			utils.Warning("[报告生成] 结果为空，添加一条示例数据用于调试")
+			exampleResult := map[string]interface{}{
+				"method":        "GET",
+				"url":           "https://example.com/api/test",
+				"requestA":      "id=123&user=admin",
+				"requestB":      "id=123&user=guest",
+				"headerA":       "Authorization: Bearer xyz\nContent-Type: application/json",
+				"headerB":       "Content-Type: application/json",
+				"respBodyA":     "{\"status\":\"success\",\"data\":{\"user\":\"admin\",\"role\":\"admin\"}}",
+				"respBodyB":     "{\"status\":\"success\",\"data\":{\"user\":\"guest\",\"role\":\"guest\"}}",
+				"result":        "true",
+				"reason":        "未授权访问成功获取了与授权访问相似的数据",
+				"vulnType":      "未授权访问",
+				"similarity":    0.85,
+				"differences":   []string{"用户角色不同", "权限范围不同"},
+				"sensitiveData": []string{"管理员信息泄露"},
+				"scanTime":      time.Now().Format("2006-01-02 15:04:05"),
+			}
+			reportGenerator.AddResult(exampleResult)
+			utils.Info("[报告生成] 已添加示例数据")
+		}
+
 		filepath, err := reportGenerator.GenerateReport(format)
 		if err != nil {
+			utils.Error("[报告生成] 生成报告失败: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
+		utils.Info("[报告生成] 报告生成成功，路径: %s", filepath)
 		c.JSON(http.StatusOK, gin.H{
 			"message":  "报告生成成功",
 			"filepath": filepath,
@@ -377,6 +469,10 @@ func index(port int) {
 	// 添加清除数据API
 	r.POST("/clear", func(c *gin.Context) {
 		Resp = []Result{}
+		// 同时重置报告生成器
+		if reportGenerator != nil {
+			reportGenerator = utils.NewReportGenerator(config.GetConfig().Output.ReportDirectory)
+		}
 		c.JSON(http.StatusOK, gin.H{"message": "数据已清除"})
 	})
 
@@ -550,20 +646,20 @@ func (a *MyAddon) Error(f *proxy.Flow) {
 	// 增强错误日志，特别是TLS相关错误
 	utils.Error("代理请求处理发生错误, ID=%s, URL=%s", f.Id, f.Request.URL)
 
-	// 检查证书路径
-	certPath := os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca.pem")
-	if _, err := os.Stat(certPath); err != nil {
-		utils.Error("证书文件异常: %v, 路径: %s", err, certPath)
-	} else {
-		utils.Debug("证书文件存在: %s", certPath)
-	}
+	// // 检查证书路径
+	// certPath := os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca.pem")
+	// if _, err := os.Stat(certPath); err != nil {
+	// 	utils.Error("证书文件异常: %v, 路径: %s", err, certPath)
+	// } else {
+	// 	utils.Debug("证书文件存在: %s", certPath)
+	// }
 
-	// 提示常见的TLS错误解决方案
-	utils.Info("如果您看到TLS证书错误，请尝试以下步骤:")
-	utils.Info("1. 确保已经正确下载并安装了证书")
-	utils.Info("2. 对于macOS，确保已将证书添加到钥匙串并信任")
-	utils.Info("3. 对于iOS/Android设备，确保已在设备设置中信任该证书")
-	utils.Info("4. 某些应用可能使用证书锁定(SSL Pinning)技术，可能需要额外的配置")
+	// // 提示常见的TLS错误解决方案
+	// utils.Info("如果您看到TLS证书错误，请尝试以下步骤:")
+	// utils.Info("1. 确保已经正确下载并安装了证书")
+	// utils.Info("2. 对于macOS，确保已将证书添加到钥匙串并信任")
+	// utils.Info("3. 对于iOS/Android设备，确保已在设备设置中信任该证书")
+	// utils.Info("4. 某些应用可能使用证书锁定(SSL Pinning)技术，可能需要额外的配置")
 }
 
 // mitmproxy 启动代理服务
@@ -617,12 +713,6 @@ func mitmproxy(port int, streamLargeBodies int) {
 	p.AddAddon(&NetworkMonitorAddon{}) // 添加网络监视Addon
 
 	utils.Info("代理服务运行中...")
-	utils.Info("要拦截HTTPS流量，请下载并安装证书:")
-	utils.Info("1. 设置设备代理为 127.0.0.1%s", portStr)
-	utils.Info("2. 访问 http://mitm.it 或 http://127.0.0.1%s/cert 下载证书", portStr)
-	utils.Info("3. 按照提示安装证书到您的设备")
-	utils.Info("4. 对于macOS，请确保在钥匙串中将证书设置为\"始终信任\"")
-	utils.Info("5. 请确保您的设备或浏览器已正确配置代理设置")
 
 	// 启动代理前再次检查代理状态
 	checkProxyStatus(portStr)

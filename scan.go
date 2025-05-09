@@ -19,9 +19,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 	"yuequanScan/AIAPIS"
+	"github.com/axgle/mahonia"
 	"yuequanScan/config"
 	"yuequanScan/utils"
-	"yuequanScan/types"
 	_ "yuequanScan/similarity"
 	
 
@@ -36,7 +36,6 @@ const (
 	VulnPrivilegeEscalation VulnType = "privilege_escalation" // 越权漏洞
 	VulnUnauthorizedAccess  VulnType = "unauthorized_access"  // 未授权访问漏洞
 	VulnSensitiveDataLeak   VulnType = "sensitive_data_leak"  // 敏感数据泄露漏洞
-	VulnSqlInjection        VulnType = "sql_injection"        // SQL注入漏洞
 )
 
 // 扫描结果
@@ -72,8 +71,11 @@ var (
 	// ... existing variables ...
 	whitelistDomains       = make(map[string]bool)
 	whitelistMutex         sync.RWMutex
-	completedRequestsMap   = make(map[string]*types.RequestResponseLog)
+	completedRequestsMap   = make(map[string]*RequestResponseLog)
 	completedRequestsMutex sync.RWMutex
+
+	enc = mahonia.NewEncoder("utf-8")
+	
 )
 
 // 状态常量
@@ -312,7 +314,7 @@ func ScanImpl() {
 			countByPath := make(map[string]int)
 			countByHost := make(map[string]int)
 			logs.Range(func(_, value interface{}) bool {
-				if req, ok := value.(*types.RequestResponseLog); ok && req.Request != nil && req.Request.URL != nil {
+				if req, ok := value.(*RequestResponseLog); ok && req.Request != nil && req.Request.URL != nil {
 					path := req.Request.URL.Path
 					host := req.Request.URL.Host
 					countByPath[path]++
@@ -386,7 +388,7 @@ func processCompletedRequests() (processed int, skipped int, filtered int, stati
 
 	// 遍历所有请求
 	logs.Range(func(key, value interface{}) bool {
-		rr, ok := value.(*types.RequestResponseLog)
+		rr, ok := value.(*RequestResponseLog)
 		if !ok {
 			utils.Warning("[请求处理] 无效的请求日志类型: %v", key)
 			return true
@@ -403,14 +405,14 @@ func processCompletedRequests() (processed int, skipped int, filtered int, stati
 			return true
 		}
 
-		// 获取主机名
+		// 获取hostname
 		hostname := rr.Request.URL.Host
 		if hostname == "" {
 			utils.Warning("[请求处理] 无法获取hostname: %v", key)
 			return true
 		}
 
-		// 检查是否在白名单中
+		// 白名单检查
 		utils.Info("[白名单检查] 检查域名: %s", hostname)
 		if !IsWhitelisted(hostname) {
 			utils.Info("[白名单检查] 域名 %s 不在白名单中，跳过处理", hostname)
@@ -419,32 +421,39 @@ func processCompletedRequests() (processed int, skipped int, filtered int, stati
 			return true
 		}
 
-		// 检查是否是静态资源
+		// 检查是否为静态资源
 		if !isNotSuffix(rr.Request.URL.Path, conf.Suffixes) {
 			utils.Info("命中静态资源文件，不处理")
+			skipped++
 			static++
 			rr.Processed = true
 			return true
 		}
 
 		// 检查是否在排除路径中
-		if isExcludedPath(rr.Request.URL.String(), conf.UnauthorizedScan.ExcludePatterns) {
-			utils.Info("命中排出路径，不处理")
-			filtered++
+		if isExcludedPath(rr.Request.URL.Path, conf.UnauthorizedScan.ExcludePatterns) {
+			utils.Info("命中公共接口排除路径，不处理")
+			skipped++
 			rr.Processed = true
 			return true
 		}
 
-		// 检查响应内容类型是否在允许处理的类型列表中
-		if rr.Response != nil && rr.Response.Header != nil {
+		// 检查是否包含需要排除的关键词
+		if len(conf.UnauthorizedScan.ExcludeKeywords) > 0 && containsExcludeKeywords(rr.Request.URL.Path, conf.UnauthorizedScan.ExcludeKeywords) {
+			utils.Info("命中公共接口排除关键词，不处理")
+			skipped++
+			rr.Processed = true
+			return true
+		}
+
+		// 检查响应头
+		if rr.Response != nil {
 			contentType := rr.Response.Header.Get("Content-Type")
-			for _, allowedType := range conf.AllowedRespHeaders {
-				if strings.Contains(contentType, allowedType) {
-					utils.Info("命中不允许的响应类型，不处理")
-					filtered++
-					rr.Processed = true
-					return true
-				}
+			if contains(conf.AllowedRespHeaders, contentType) {
+				utils.Info("命中不允许的响应类型，不处理")
+				skipped++
+				rr.Processed = true
+				return true
 			}
 		}
 
@@ -453,10 +462,21 @@ func processCompletedRequests() (processed int, skipped int, filtered int, stati
 	})
 
 	utils.Info("[请求处理] 处理完成 - 已处理: %d, 已跳过: %d", processed, skipped)
-	return processed, skipped, filtered, static
+	return processed, skipped, 0, 0
 }
 
-// isExcludedPath 检查URL是否在排除列表中
+// 检查是否包含需要排除的关键词
+func containsExcludeKeywords(path string, keywords []string) bool {
+	lowerPath := strings.ToLower(path)
+	for _, keyword := range keywords {
+		if strings.Contains(lowerPath, strings.ToLower(keyword)) {
+			return true
+		}
+	}
+	return false
+}
+
+// 检查是否为需要排除的路径
 func isExcludedPath(url string, excludePatterns []string) bool {
 	for _, pattern := range excludePatterns {
 		if strings.Contains(strings.ToLower(url), strings.ToLower(pattern)) {
@@ -466,106 +486,135 @@ func isExcludedPath(url string, excludePatterns []string) bool {
 	return false
 }
 
-// cloneRequest 克隆请求
-func cloneRequest(r *proxy.Request) (*http.Request, error) {
-	if r == nil {
+// 克隆HTTP请求对象，用于创建未授权请求副本
+func cloneRequest(r *proxy.Request) *http.Request {
+	if r == nil || r.URL == nil {
 		utils.Error("[请求克隆] 无法克隆空请求")
-		return nil, fmt.Errorf("无法克隆空请求")
+		return nil
 	}
 
-	// 解析URL
-	parsedURL, err := url.Parse(r.URL.String())
+	// 创建原始URL的副本
+	targetURL, err := url.Parse(r.URL.String())
 	if err != nil {
 		utils.Error("[请求克隆] 解析URL失败: %v", err)
-		return nil, err
+		return nil
 	}
 
-	// 创建新的请求体
-	var body io.Reader
-	if len(r.Body) > 0 {
-		body = bytes.NewReader(r.Body)
+	// 创建请求体的副本（如果有）
+	var bodyReader io.Reader
+	if r.Body != nil && len(r.Body) > 0 {
+		bodyReader = bytes.NewReader(r.Body)
 	}
 
-	// 创建新的请求
-	req, err := http.NewRequest(r.Method, parsedURL.String(), body)
+	// 创建新的HTTP请求
+	req, err := http.NewRequest(r.Method, targetURL.String(), bodyReader)
 	if err != nil {
 		utils.Error("[请求克隆] 创建请求对象失败: %v", err)
-		return nil, err
+		return nil
 	}
 
-	// 复制头部
+	// 完全复制所有请求头，保持原始顺序
 	for key, values := range r.Header {
+		// 跳过一些不需要复制的头部
+		if key == "Connection" || key == "Content-Length" {
+			continue
+		}
 		for _, value := range values {
 			req.Header.Add(key, value)
 		}
 	}
 
-	// 设置Host和协议
-	req.Host = r.URL.Host
-	req.Proto = "HTTP/1.1"
-	req.ProtoMajor = 1
-	req.ProtoMinor = 1
+	// 使用URL的主机名作为Host头
+	if targetURL.Host != "" {
+		req.Host = targetURL.Host
+	}
 
-	// 打印调试信息
+	// 记录原始请求头的详细信息
 	utils.Debug("[请求克隆] 原始请求详情:")
 	utils.Debug("  - 方法: %s", r.Method)
 	utils.Debug("  - URL: %s", r.URL.String())
 	utils.Debug("  - 协议: %s", r.Proto)
 	utils.Debug("  - 请求头数量: %d", len(r.Header))
 
+	// 记录所有请求头，用于调试
 	for key, values := range r.Header {
 		utils.Debug("[请求克隆] 原始请求头: %s = %v", key, values)
 	}
 
+	// 记录克隆后的请求头
 	utils.Debug("[请求克隆] 克隆后请求头数量: %d", len(req.Header))
 	for key, values := range req.Header {
 		utils.Debug("[请求克隆] 克隆后请求头: %s = %v", key, values)
 	}
 
-	return req, nil
+	return req
 }
 
-// detectUnauthorizedAccess 检测未授权访问漏洞
-func detectUnauthorizedAccess(r *types.RequestResponseLog) (*types.Result, error) {
-	// 如果配置不存在，跳过检测
+// 检测未授权访问
+func detectUnauthorizedAccess(r *RequestResponseLog) (*Result, error) {
+	if r == nil || r.Request == nil || r.Response == nil {
+		return nil, fmt.Errorf("无效的请求或响应")
+	}
+
+	// 获取配置
+	conf := config.GetConfig()
 	if conf == nil {
-		return nil, fmt.Errorf("配置不存在")
+		return nil, fmt.Errorf("配置未初始化")
 	}
 
-	// 如果未启用未授权扫描，则跳过
-	if !conf.UnauthorizedScan.Enabled {
-		return nil, fmt.Errorf("未启用未授权扫描")
-	}
-
+	// 记录请求URL和相关信息
 	utils.Info("[未授权检测] 开始检测请求: %s %s", r.Request.Method, r.Request.URL.String())
 
-	// 记录请求开始时间
-	startTime := time.Now()
-
-	// 检查请求是否为GET/HEAD/OPTIONS/POST等方法
-	// 其他方法如PUT/DELETE等可能会修改数据，不检测
-	allowedMethods := []string{"GET", "HEAD", "OPTIONS", "POST"}
-	if !contains(allowedMethods, r.Request.Method) {
-		return nil, fmt.Errorf("不支持的HTTP方法: %s", r.Request.Method)
+	// 创建结果对象
+	vulnResult := &Result{
+		Method:   r.Request.Method,
+		Url:      r.Request.URL.String(),
+		VulnType: string(VulnUnauthorizedAccess),
+		Result:   "unknown",
+		ScanTime: time.Now().Format("2006-01-02 15:04:05"), // 添加扫描时间
 	}
 
-	// 如果原始请求没有授权相关头部，跳过检测
-	hasAuthHeader := false
-	for _, key := range conf.UnauthorizedScan.RemoveHeaders {
-		if len(r.Request.Header.Values(key)) > 0 {
-			hasAuthHeader = true
-			break
-		}
+	// 获取完整的原始请求协议版本
+	proto := r.Request.Proto
+	if proto == "" {
+		proto = "2" // 默认使用HTTP/2
 	}
 
-	if !hasAuthHeader {
-		return nil, fmt.Errorf("请求没有包含授权头，跳过检测")
+	// 获取Host值，这是关键
+	host := ""
+	if hostValues := r.Request.Header["Host"]; len(hostValues) > 0 {
+		host = hostValues[0]
+	} else if r.Request.URL != nil && r.Request.URL.Host != "" {
+		host = r.Request.URL.Host
 	}
 
-	// 获取请求的主机、协议等信息
-	proto := "HTTP/1.1"
-	host := r.Request.URL.Host
+	// 构建完整的请求行，确保使用确切的HTTP方法
+	requestLine := fmt.Sprintf("%s %s %s",
+		r.Request.Method,
+		r.Request.URL.Path+r.Request.URL.RawQuery,
+		proto)
 
+	// 设置原始请求详情 - 全部重新构建确保格式一致
+	vulnResult.RequestA = requestLine + "\n"
+
+	// 如果Host不在请求头中，手动添加
+	reqHeader := formatHeaders(r.Request.Header)
+	if !strings.Contains(reqHeader, "Host: ") && host != "" {
+		vulnResult.RequestA += fmt.Sprintf("Host: %s\n", host)
+	}
+
+	// 添加其他请求头
+	vulnResult.RequestA += reqHeader
+
+	// 如果有请求体，添加空行后添加请求体
+	if len(r.Request.Body) > 0 {
+		vulnResult.RequestA += "\n" + string(r.Request.Body)
+	} else {
+		// 即使没有请求体，也添加空行表示请求头结束
+		vulnResult.RequestA += "\n"
+	}
+
+	// 记录原始请求的详细信息
 	utils.Debug("[未授权检测] 原始请求详情:")
 	utils.Debug("  - 方法: %s", r.Request.Method)
 	utils.Debug("  - URL: %s", r.Request.URL.String())
@@ -573,92 +622,100 @@ func detectUnauthorizedAccess(r *types.RequestResponseLog) (*types.Result, error
 	utils.Debug("  - Host: %s", host)
 	utils.Debug("  - 请求头数量: %d", len(r.Request.Header))
 
-	// 克隆原始请求，移除授权头
-	req2, err := cloneRequest(r.Request)
-	if err != nil {
+	// 创建未授权请求
+	req2 := cloneRequest(r.Request)
+	if req2 == nil {
 		utils.Warning("[未授权检测] 无法克隆请求，跳过检测")
-		return nil, fmt.Errorf("无法克隆请求: %v", err)
+		return nil, fmt.Errorf("无法克隆请求")
 	}
 
-	// 从请求头中移除授权相关的头部
-	for _, header := range conf.UnauthorizedScan.RemoveHeaders {
-		if header == "" {
-			continue
+	// 移除授权相关头部
+	// 安全地访问配置
+	if conf != nil {
+		// 从配置中获取要移除的头部
+		if len(conf.UnauthorizedScan.RemoveHeaders) > 0 {
+			for _, header := range conf.UnauthorizedScan.RemoveHeaders {
+				req2.Header.Del(header)
+			}
+		} else {
+			// 如果配置中没有定义要删除的头部，使用默认的授权头
+			defaultAuthHeaders := []string{"Authorization", "Cookie", "X-Auth-Token", "X-API-Key", "Bearer"}
+			for _, header := range defaultAuthHeaders {
+				req2.Header.Del(header)
+			}
+			utils.Debug("[未授权检测] 配置中未定义RemoveHeaders，使用默认授权头列表")
 		}
-		
-		if len(req2.Header.Values(header)) > 0 {
+	} else {
+		// 如果配置不可用，使用默认的授权头
+		defaultAuthHeaders := []string{"Authorization", "Cookie", "X-Auth-Token", "X-API-Key", "Bearer"}
+		for _, header := range defaultAuthHeaders {
 			req2.Header.Del(header)
 		}
-	}
-
-	// 如果未在配置中定义RemoveHeaders，使用默认的授权头
-	if len(conf.UnauthorizedScan.RemoveHeaders) == 0 {
-		utils.Debug("[未授权检测] 配置中未定义RemoveHeaders，使用默认授权头列表")
-
-		defaultAuthHeaders := []string{
-			"Authorization", "Cookie", "Token", "Jwt", 
-			"X-Auth-Token", "X-Csrf-Token", "Sectoken",
-			"Usertoken", "X-Api-Key",
-		}
-
-		for _, header := range defaultAuthHeaders {
-			if len(req2.Header.Values(header)) > 0 {
-				req2.Header.Del(header)
-			}
-		}
-	} else if conf == nil {
 		utils.Debug("[未授权检测] 配置对象为空，使用默认授权头列表")
-
-		// 默认的授权头列表
-		defaultAuthHeaders := []string{
-			"Authorization", "Cookie", "Token", "Jwt", 
-			"X-Auth-Token", "X-Csrf-Token",
-		}
-
-		for _, header := range defaultAuthHeaders {
-			if len(req2.Header.Values(header)) > 0 {
-				req2.Header.Del(header)
-			}
-		}
 	}
 
-	// 记录生成的请求信息
-	req1 = r.Request.URL.String()
+	// 设置未授权请求详情 - 使用与原始请求相同的格式进行构建
+	vulnResult.RequestB = requestLine + "\n" // 使用相同的请求行
+
+	// 如果Host不在请求头中，手动添加
+	reqHeader2 := formatHeaders(req2.Header)
+	if !strings.Contains(reqHeader2, "Host: ") && host != "" {
+		vulnResult.RequestB += fmt.Sprintf("Host: %s\n", host)
+	}
+
+	// 添加其他请求头
+	vulnResult.RequestB += reqHeader2
+
+	// 如果有请求体，添加空行后添加请求体
+	if len(r.Request.Body) > 0 {
+		vulnResult.RequestB += "\n" + string(r.Request.Body)
+	} else {
+		// 即使没有请求体，也添加空行表示请求头结束
+		vulnResult.RequestB += "\n"
+	}
+
+	// 记录未授权请求的详细信息
 	utils.Debug("[未授权检测] 未授权请求详情:")
 	utils.Debug("  - 方法: %s", req2.Method)
 	utils.Debug("  - URL: %s", req2.URL.String())
 	utils.Debug("  - 协议: %s", req2.Proto)
 	utils.Debug("  - 请求头数量: %d", len(req2.Header))
 
-	// 创建HTTP客户端对象
+	// 设置原始响应头
+	if r.Response != nil && r.Response.Header != nil {
+		vulnResult.HeaderA = formatHeaders(r.Response.Header)
+	}
+
+	// 设置原始响应体
+	if r.Response != nil && r.Response.Body != nil {
+		vulnResult.RespBodyA = enc.ConvertString(string(r.Response.Body))
+	}
+
+	// 发送未授权请求
 	client := &http.Client{
+		Timeout: time.Second * 10,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // 跳过证书验证，用于测试
-			},
-		},
-		Timeout: time.Duration(conf.Performance.RequestTimeout) * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// 限制重定向次数
-			if len(via) >= 10 {
-				return fmt.Errorf("停止跟随重定向，重定向次数超过10次")
-			}
-			return nil
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
 
-	// 输出更多调试信息
+	// 确保设置正确的请求头
+	if req2.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
+		req2.Header.Set("Accept", "application/json; charset=utf-8")
+	}
+
+	// 增强发送未授权请求前的调试输出
 	utils.Debug("[未授权检测] 准备发送未授权请求:")
 	utils.Debug("  - 方法: %s", req2.Method)
 	utils.Debug("  - URL: %s", req2.URL.String())
 	utils.Debug("  - 请求头数量: %d", len(req2.Header))
 
-	// 打印请求头
+	// 记录所有请求头
 	for key, values := range req2.Header {
 		utils.Debug("[未授权检测] 请求头: %s = %v", key, values)
 	}
 
-	// 发送未授权请求
+	// 发送请求并获取响应
 	resp, err := client.Do(req2)
 	if err != nil {
 		utils.Warning("[未授权检测] 发送未授权请求失败: %v", err)
@@ -667,81 +724,102 @@ func detectUnauthorizedAccess(r *types.RequestResponseLog) (*types.Result, error
 	defer resp.Body.Close()
 
 	// 读取响应体
-	respBodyBytes, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		utils.Warning("[未授权检测] 读取响应体失败: %v", err)
 		return nil, err
 	}
 
-	// 处理可能的编码问题
-	respBodyStr := string(respBodyBytes)
+	// 处理编码问题
 	contentType := resp.Header.Get("Content-Type")
-
-	// 特殊处理: 如果请求是application/x-www-form-urlencoded但响应是JSON
-	if strings.Contains(contentType, "application/json") {
+	if strings.Contains(contentType, "application/json") && req2.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
+		// 确保JSON响应使用UTF-8编码
 		utils.Debug("[未授权检测] 检测到application/x-www-form-urlencoded请求但返回JSON响应，处理编码")
-	}
 
-	// 检测和转换非UTF-8编码（如GBK）
-	if !utf8.ValidString(respBodyStr) {
-		utils.Warning("[未授权检测] 检测到非UTF-8编码的JSON响应，尝试转换")
-		// 尝试GBK转UTF-8
-		gbkDecoder := simplifiedchinese.GBK.NewDecoder()
-		utf8Bytes, err := gbkDecoder.Bytes(respBodyBytes)
-		if err == nil {
-			respBodyStr = string(utf8Bytes)
-			utils.Info("[未授权检测] 成功将响应体从GBK转换为UTF-8")
+		// 尝试检测并修复编码问题
+		if !utf8.Valid(respBody) {
+			utils.Warning("[未授权检测] 检测到非UTF-8编码的JSON响应，尝试转换")
+
+			// 导入 golang.org/x/text/encoding/simplifiedchinese 包已在文件开头
+			// 这里假设可能是GBK编码，实际使用中可能需要更精确的检测
+			utf8Body, err := simplifiedchinese.GBK.NewDecoder().Bytes(respBody)
+			if err == nil {
+				respBody = utf8Body
+				utils.Info("[未授权检测] 成功将响应体从GBK转换为UTF-8")
+			}
 		}
 	}
 
-	// 创建结果对象
-	result := &types.Result{
-		Method:     r.Request.Method,
-		Url:        r.Request.URL.String(),
-		RequestA:   formatRequest(req2),
-		HeaderA:    formatHeaders(r.Request.Header),
-		HeaderB:    formatHeaders(req2.Header),
-		RespBodyB:  respBodyStr,
-		Result:     "false", // 默认结果为false，后面会根据分析修改
-		VulnType:   string(types.VulnUnauthorizedAccess),
-		ScanTime:   time.Now().Format("2006-01-02 15:04:05"),
-		Similarity: 0.0,
-	}
+	// 设置未授权响应头
+	vulnResult.HeaderB = formatHeaders(resp.Header)
 
-	// 检查响应体是否包含敏感数据
-	var sensitiveMatches []string
-	
-	// 寻找敏感数据
-	if conf != nil && conf.UnauthorizedScan.SensitiveDataPatterns.Enabled {
-		sensitiveMatches = detectSensitiveDataWithDetails(respBodyStr, conf.UnauthorizedScan.SensitiveDataPatterns.PatternMap)
-		if len(sensitiveMatches) > 0 {
-			result.SensitiveData = sensitiveMatches
-			utils.Info("[未授权检测] 在未授权响应中发现敏感数据: %d 处", len(sensitiveMatches))
-		}
-	}
+	// 设置未授权响应体
+	vulnResult.RespBodyB = string(respBody)
 
 	// 计算置信度分数
-	confidenceScore, appliedRules := calculateConfidenceScore(r, respBodyBytes, resp)
-	
-	// 修改结果
-	if confidenceScore >= conf.UnauthorizedScan.HighConfidenceScore {
-		result.Result = "true"
-		result.Reason = fmt.Sprintf("高可信度未授权访问，分数: %d", confidenceScore)
-	} else if confidenceScore >= conf.UnauthorizedScan.MediumConfidenceScore {
-		result.Result = "true"
-		result.Reason = fmt.Sprintf("中等可信度未授权访问，分数: %d", confidenceScore)
-	} else if confidenceScore >= conf.UnauthorizedScan.LowConfidenceScore {
-		result.Result = "unknown"
-		result.Reason = fmt.Sprintf("低可信度未授权访问，分数: %d", confidenceScore)
-	} else {
-		result.Result = "false"
-		result.Reason = fmt.Sprintf("未检测到未授权访问，分数: %d", confidenceScore)
+	score, reasons, scoreDetails := calculateConfidenceScore(r, respBody, resp)
+
+	// 检测敏感数据并添加到结果
+	if conf.UnauthorizedScan.SensitiveDataPatterns.Enabled {
+		sensitivePatterns := make(map[string]string)
+		for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.JsonPatterns {
+			sensitivePatterns[pattern.Name] = pattern.Pattern
+		}
+
+		// 检测未授权响应中的敏感数据
+		sensitiveMatches := detectSensitiveDataWithDetails(string(respBody), sensitivePatterns)
+		if len(sensitiveMatches) > 0 {
+			// 确保结果中包含完整的敏感数据信息
+			vulnResult.SensitiveData = sensitiveMatches
+			utils.Info("[未授权检测] 在未授权响应中发现敏感数据: %d 处", len(sensitiveMatches))
+			
+			// 发现敏感数据时的处理增强
+			sensDataStr := strings.Join(sensitiveMatches[:min(3, len(sensitiveMatches))], ", ")
+			if len(sensitiveMatches) > 3 {
+				sensDataStr += fmt.Sprintf(" 等%d处", len(sensitiveMatches))
+			}
+			
+			
+			
+			// 如果发现高价值敏感数据或数量较多，直接判定为高置信度漏洞
+			if len(sensitiveMatches) >= 3 {
+				utils.Warning("[未授权检测] 发现高价值或大量敏感数据，强制判定为漏洞")
+				vulnResult.Result = "true"
+				vulnResult.Reason = fmt.Sprintf("未授权访问返回高价值敏感数据: %s (置信度分数: %d)\n\n置信度评分详情:\n%s", sensDataStr, score, scoreDetails)
+				return vulnResult, nil
+			}
+		}
 	}
 
-	utils.Info("[未授权检测] 检测完成: URL=%s, 结果=%s, 分数=%d, 原因=%v",
-		r.Request.URL.String(), result.Result, confidenceScore, appliedRules)
+	// 根据置信度分数和敏感数据存在情况设置结果
+	if score >= conf.UnauthorizedScan.HighConfidenceScore {
+		vulnResult.Result = "true"
+		vulnResult.Reason = fmt.Sprintf("高置信度未授权访问 (分数: %d, 原因: %v)\n\n置信度评分详情:\n%s", score, reasons, scoreDetails)
+	} else if score >= conf.UnauthorizedScan.MediumConfidenceScore {
+		// 如果是中等置信度但包含敏感数据，升级为高置信度
+		if len(vulnResult.SensitiveData) > 0 {
+			vulnResult.Result = "true"
+			vulnResult.Reason = fmt.Sprintf("包含敏感数据的中等置信度未授权访问 (分数: %d, 原因: %v)\n\n置信度评分详情:\n%s", score, reasons, scoreDetails)
+		} else {
+			vulnResult.Result = "unknown"
+			vulnResult.Reason = fmt.Sprintf("中等置信度未授权访问 (分数: %d, 原因: %v)\n\n置信度评分详情:\n%s", score, reasons, scoreDetails)
+		}
+	} else {
+		// 即使是低置信度，如果包含敏感数据，也升级为"unknown"
+		if len(vulnResult.SensitiveData) > 0 {
+			vulnResult.Result = "unknown"
+			vulnResult.Reason = fmt.Sprintf("包含敏感数据但低置信度的未授权访问 (分数: %d, 原因: %v)\n\n置信度评分详情:\n%s", score, reasons, scoreDetails)
+		} else {
+			vulnResult.Result = "false"
+			vulnResult.Reason = fmt.Sprintf("低置信度未授权访问 (分数: %d, 原因: %v)\n\n置信度评分详情:\n%s", score, reasons, scoreDetails)
+		}
+	}
 
-	return result, nil
+	// 记录检测结果
+	utils.Info("[未授权检测] 检测完成: URL=%s, 结果=%s, 分数=%d, 原因=%v, 敏感数据数量=%d",
+		r.Request.URL.String(), vulnResult.Result, score, reasons, len(vulnResult.SensitiveData))
+
+	return vulnResult, nil
 }
 
 func formatHeaders(headers http.Header) string {
@@ -1019,21 +1097,22 @@ func isValidMatch(name string, value string) bool {
 }
 
 // 计算未授权访问的置信度评分
-func calculateConfidenceScore(r *types.RequestResponseLog, respBody []byte, resp *http.Response) (int, []string) {
+func calculateConfidenceScore(r *RequestResponseLog, respBody []byte, resp *http.Response) (int, []string, string) {
 	totalScore := 0
 	appliedRules := []string{}
+	detailedScoring := ""  // 用于记录详细的打分细则
 
 	// 检查参数是否为空
 	if r == nil || r.Response == nil || resp == nil || respBody == nil {
 		utils.Warning("[未授权检测] calculateConfidenceScore调用参数异常: r=%v, respBody长度=%d, resp=%v",
 			r != nil, len(respBody), resp != nil)
-		return 0, []string{"参数检查失败"}
+		return 0, []string{"参数检查失败"}, "参数检查失败"
 	}
 
 	// 确保r.Response.Body不为空
 	if r.Response.Body == nil {
 		utils.Warning("[未授权检测] 原始响应体为空")
-		return 0, []string{"原始响应体为空"}
+		return 0, []string{"原始响应体为空"}, "原始响应体为空"
 	}
 
 	// 获取配置
@@ -1042,7 +1121,7 @@ func calculateConfidenceScore(r *types.RequestResponseLog, respBody []byte, resp
 	// 获取配置的规则列表
 	if conf == nil {
 		utils.Error("[未授权检测] 配置对象为空")
-		return 0, []string{"配置对象为空"}
+		return 0, []string{"配置对象为空"}, "配置对象为空"
 	}
 
 	rules := conf.UnauthorizedScan.ConfidenceRules
@@ -1052,10 +1131,19 @@ func calculateConfidenceScore(r *types.RequestResponseLog, respBody []byte, resp
 		rules = getDefaultConfidenceRules()
 	}
 
+	// 计算所有规则的总权重，用于后续的归一化处理
+	totalWeight := 0
+	for _, rule := range rules {
+		totalWeight += rule.Weight
+	}
+
+	detailedScoring += fmt.Sprintf("置信度评分规则总权重：%d分\n", totalWeight)
+
 	// 检查响应体中的敏感数据，并根据命中条数计算分数
 	var sensitiveDataCount int
 	var sensitiveDetails []string
 	var sensitiveMatches []string // 保存完整的敏感数据匹配结果
+	var sensitiveTypeCounts map[string]int = make(map[string]int)
 
 	if conf.UnauthorizedScan.SensitiveDataPatterns.Enabled {
 		sensitivePatterns := make(map[string]string)
@@ -1068,7 +1156,7 @@ func calculateConfidenceScore(r *types.RequestResponseLog, respBody []byte, resp
 		sensitiveDataCount = len(sensitiveMatches)
 
 		// 分类汇总敏感数据类型及数量
-		sensitiveTypeCounts := make(map[string]int)
+		sensitiveTypeCounts = make(map[string]int)
 		for _, match := range sensitiveMatches {
 			parts := strings.SplitN(match, ": ", 2)
 			if len(parts) > 0 {
@@ -1084,31 +1172,55 @@ func calculateConfidenceScore(r *types.RequestResponseLog, respBody []byte, resp
 	}
 
 	// 遍历规则并评分
+	detailedScoring += "规则评分明细：\n"
 	for _, rule := range rules {
 		switch rule.Name {
 		case "contains_sensitive_data":
-			// 根据敏感数据命中数量计算分数
+			// 根据敏感数据命中数量计算分数，保持在权重范围内
 			if sensitiveDataCount > 0 {
-				// 基础分 + 命中条数加分（最高不超过规则权重）
-				baseScore := rule.Weight / 2                       // 基础分为权重的一半
-				extraScore := min(baseScore, sensitiveDataCount*5) // 每条敏感数据加5分，但不超过基础分
-				earnedScore := baseScore + extraScore
+				// 基础分为权重的60%
+				baseScore := rule.Weight * 60 / 100
+				
+				// 根据敏感数据数量计算额外加分，但不超过权重的40%
+				extraScoreMax := rule.Weight * 40 / 100
+				extraScore := min(extraScoreMax, sensitiveDataCount * 5)
+				
+				// 对于高价值敏感数据类型（如身份证号、手机号），在不超过权重的情况下额外加分
+				highValueBonus := 0
+				for dataType := range sensitiveTypeCounts {
+					if (strings.Contains(dataType, "身份证") || strings.Contains(dataType, "手机号")) && 
+                       (baseScore + extraScore + highValueBonus < rule.Weight) {
+						highValueBonus += 3
+					}
+				}
+				
+				// 确保总分不超过规则权重
+				earnedScore := min(rule.Weight, baseScore + extraScore + highValueBonus)
 
 				totalScore += earnedScore
 				if len(sensitiveDetails) > 0 {
-					appliedRules = append(appliedRules, fmt.Sprintf("发现敏感数据: %s", strings.Join(sensitiveDetails, "、")))
+					appliedRules = append(appliedRules, fmt.Sprintf("发现高价值敏感数据: %s", strings.Join(sensitiveDetails, "、")))
 				} else {
 					appliedRules = append(appliedRules, fmt.Sprintf("发现敏感数据(%d处)", sensitiveDataCount))
 				}
 
-				utils.Debug("[未授权检测] 敏感数据评分: 基础分=%d, 额外分=%d, 总计=%d, 敏感数据数量=%d",
-					baseScore, extraScore, earnedScore, sensitiveDataCount)
+				detailedScoring += fmt.Sprintf("- %s: +%d分 (基础分:%d分, 数量加成:%d分, 高价值加成:%d分)\n  敏感数据: %s\n", 
+					rule.Description, earnedScore, baseScore, extraScore, highValueBonus, 
+					strings.Join(sensitiveDetails, "、"))
+
+				utils.Debug("[未授权检测] 敏感数据评分: 基础分=%d, 额外分=%d, 高价值数据加分=%d, 总计=%d, 敏感数据数量=%d",
+					baseScore, extraScore, highValueBonus, earnedScore, sensitiveDataCount)
+			} else {
+				detailedScoring += fmt.Sprintf("- %s: +0分 (未检测到敏感数据)\n", rule.Description)
 			}
 
 		case "successful_status_code":
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				totalScore += rule.Weight
 				appliedRules = append(appliedRules, "成功状态码")
+				detailedScoring += fmt.Sprintf("- %s: +%d分 (状态码:%d)\n", rule.Description, rule.Weight, resp.StatusCode)
+			} else {
+				detailedScoring += fmt.Sprintf("- %s: +0分 (状态码:%d, 非2xx)\n", rule.Description, resp.StatusCode)
 			}
 
 		case "json_response":
@@ -1116,12 +1228,18 @@ func calculateConfidenceScore(r *types.RequestResponseLog, respBody []byte, resp
 			if json.Unmarshal(respBody, &js) == nil {
 				totalScore += rule.Weight
 				appliedRules = append(appliedRules, "JSON响应")
+				detailedScoring += fmt.Sprintf("- %s: +%d分 (响应是有效的JSON格式)\n", rule.Description, rule.Weight)
+			} else {
+				detailedScoring += fmt.Sprintf("- %s: +0分 (响应不是有效的JSON格式)\n", rule.Description)
 			}
 
 		case "non_empty_response":
 			if len(respBody) > 20 {
 				totalScore += rule.Weight
 				appliedRules = append(appliedRules, "非空响应")
+				detailedScoring += fmt.Sprintf("- %s: +%d分 (响应长度:%d字节)\n", rule.Description, rule.Weight, len(respBody))
+			} else {
+				detailedScoring += fmt.Sprintf("- %s: +0分 (响应长度:%d字节, 小于20字节)\n", rule.Description, len(respBody))
 			}
 
 		case "error_keywords_absent":
@@ -1131,23 +1249,27 @@ func calculateConfidenceScore(r *types.RequestResponseLog, respBody []byte, resp
 				"login required", "not authorized", "invalid token",
 			}
 			hasErrorKeyword := false
+			foundKeywords := []string{}
 			respStr := strings.ToLower(string(respBody))
 			for _, keyword := range errorKeywords {
 				if strings.Contains(respStr, strings.ToLower(keyword)) {
 					hasErrorKeyword = true
-					break
+					foundKeywords = append(foundKeywords, keyword)
 				}
 			}
 			if !hasErrorKeyword {
 				totalScore += rule.Weight
 				appliedRules = append(appliedRules, "无错误关键词")
+				detailedScoring += fmt.Sprintf("- %s: +%d分 (未发现错误关键词)\n", rule.Description, rule.Weight)
+			} else {
+				detailedScoring += fmt.Sprintf("- %s: +0分 (发现错误关键词: %s)\n", rule.Description, strings.Join(foundKeywords, ", "))
 			}
 
 		case "same_content_type":
 			// 安全地获取Content-Type
 			origCT := ""
 			if r.Response != nil && r.Response.Header != nil {
-				origCT = r.Response.Header.Get("Content-Type")
+					origCT = r.Response.Header.Get("Content-Type")
 			}
 
 			newCT := ""
@@ -1158,6 +1280,9 @@ func calculateConfidenceScore(r *types.RequestResponseLog, respBody []byte, resp
 			if origCT != "" && origCT == newCT {
 				totalScore += rule.Weight
 				appliedRules = append(appliedRules, "相同内容类型")
+				detailedScoring += fmt.Sprintf("- %s: +%d分 (Content-Type匹配: %s)\n", rule.Description, rule.Weight, origCT)
+			} else {
+				detailedScoring += fmt.Sprintf("- %s: +0分 (Content-Type不匹配: 原始=%s, 当前=%s)\n", rule.Description, origCT, newCT)
 			}
 
 		case "similar_content_length":
@@ -1172,6 +1297,12 @@ func calculateConfidenceScore(r *types.RequestResponseLog, respBody []byte, resp
 			if origLen > 0 && math.Abs(float64(origLen-newLen))/float64(origLen) <= 0.1 {
 				totalScore += rule.Weight
 				appliedRules = append(appliedRules, "相似响应长度")
+				detailedScoring += fmt.Sprintf("- %s: +%d分 (长度相似度: 原始=%d字节, 当前=%d字节, 差异:%.2f%%)\n", 
+					rule.Description, rule.Weight, origLen, newLen, math.Abs(float64(origLen-newLen))/float64(origLen)*100)
+			} else {
+				detailedScoring += fmt.Sprintf("- %s: +0分 (长度差异过大: 原始=%d字节, 当前=%d字节, 差异:%.2f%%)\n", 
+					rule.Description, origLen, newLen, 
+					calculateDiffPercentage(origLen, newLen))
 			}
 
 		case "api_endpoint":
@@ -1179,19 +1310,91 @@ func calculateConfidenceScore(r *types.RequestResponseLog, respBody []byte, resp
 			if r.Request != nil && r.Request.URL != nil {
 				urlPath := r.Request.URL.Path
 				apiPatterns := []string{"/api/", "/v1/", "/v2/", "/rest/", "/service/"}
+				matched := false
+				matchedPattern := ""
 				for _, pattern := range apiPatterns {
 					if strings.Contains(urlPath, pattern) {
 						totalScore += rule.Weight
 						appliedRules = append(appliedRules, "API端点")
+						matched = true
+						matchedPattern = pattern
 						break
 					}
 				}
+				if matched {
+					detailedScoring += fmt.Sprintf("- %s: +%d分 (匹配API路径模式: %s)\n", rule.Description, rule.Weight, matchedPattern)
+				} else {
+					detailedScoring += fmt.Sprintf("- %s: +0分 (未匹配任何API路径模式: %s)\n", rule.Description, urlPath)
+				}
+			} else {
+				detailedScoring += fmt.Sprintf("- %s: +0分 (无法获取请求URL)\n", rule.Description)
 			}
 		}
 	}
 
+	// 如果包含敏感数据但总分仍低于高置信度阈值，适当提升分数，但确保不超过100分
+	if sensitiveDataCount > 0 && totalScore < conf.UnauthorizedScan.HighConfidenceScore {
+		// 根据敏感数据数量和类型计算额外加分，但最多加到高置信度阈值
+		additionalScoreMax := min(15, conf.UnauthorizedScan.HighConfidenceScore - totalScore)
+		additionalScore := min(additionalScoreMax, sensitiveDataCount * 3)
+		
+		// 如果存在身份证或手机号等高价值数据，确保至少达到高置信度阈值的80%
+		highValueBoost := false
+		for dataType := range sensitiveTypeCounts {
+			if strings.Contains(dataType, "身份证") || strings.Contains(dataType, "手机号") {
+				minScore := conf.UnauthorizedScan.HighConfidenceScore * 80 / 100
+				if totalScore + additionalScore < minScore {
+					additionalScore = minScore - totalScore
+					highValueBoost = true
+				}
+				break
+			}
+		}
+		
+		// 确保最终分数不超过100
+		if totalScore + additionalScore > 100 {
+			additionalScore = 100 - totalScore
+		}
+		
+		if additionalScore > 0 {
+			oldScore := totalScore
+			totalScore += additionalScore
+			appliedRules = append(appliedRules, fmt.Sprintf("敏感数据加成(+%d分)", additionalScore))
+			
+			if highValueBoost {
+				detailedScoring += fmt.Sprintf("\n敏感数据加成: +%d分 (原始分数:%d分 → 加成后:%d分)\n原因: 发现高价值敏感数据(身份证/手机号)但总分低于高置信度阈值\n", 
+					additionalScore, oldScore, totalScore)
+			} else {
+				detailedScoring += fmt.Sprintf("\n敏感数据加成: +%d分 (原始分数:%d分 → 加成后:%d分)\n原因: 发现敏感数据但总分低于高置信度阈值\n", 
+					additionalScore, oldScore, totalScore)
+			}
+			
+			utils.Debug("[未授权检测] 发现敏感数据但分数不足，额外加分: +%d分", additionalScore)
+		}
+	}
+	
+	// 最终确保分数不超过100
+	if totalScore > 100 {
+		utils.Warning("[未授权检测] 计算的分数(%d)超过100，将被限制为100", totalScore)
+		totalScore = 100
+		detailedScoring += "\n注意: 计算的分数超过100，已限制为100分\n"
+	}
+
+	// 添加总分和阈值信息
+	detailedScoring += fmt.Sprintf("\n总得分: %d分 (高置信度阈值:%d分, 中置信度阈值:%d分, 低置信度阈值:%d分)",
+		totalScore, conf.UnauthorizedScan.HighConfidenceScore, 
+		conf.UnauthorizedScan.MediumConfidenceScore, conf.UnauthorizedScan.LowConfidenceScore)
+
 	utils.Debug("[未授权检测] 置信度评分计算完成: %d分, 应用规则: %v", totalScore, appliedRules)
-	return totalScore, appliedRules
+	return totalScore, appliedRules, detailedScoring
+}
+
+// 计算差异百分比的辅助函数
+func calculateDiffPercentage(origLen int, newLen int) float64 {
+	if origLen > 0 {
+		return math.Abs(float64(origLen-newLen)) / float64(origLen) * 100
+	}
+	return 100.0
 }
 
 // 获取默认置信度规则
@@ -1200,27 +1403,27 @@ func getDefaultConfidenceRules() []config.ConfidenceRule {
 		{
 			Name:        "contains_sensitive_data",
 			Description: "响应中包含敏感数据（如手机号、身份证等）",
-			Weight:      40, // 敏感数据权重最高
+			Weight:      45, // 保持与配置文件中相同的权重
 		},
 		{
 			Name:        "successful_status_code",
 			Description: "响应状态码为2xx",
-			Weight:      15,
+			Weight:      10,
 		},
 		{
 			Name:        "json_response",
 			Description: "响应为有效的JSON格式",
-			Weight:      10,
+			Weight:      5,
 		},
 		{
 			Name:        "non_empty_response",
 			Description: "响应内容非空",
-			Weight:      10,
+			Weight:      5,
 		},
 		{
 			Name:        "error_keywords_absent",
 			Description: "响应中不包含错误关键词",
-			Weight:      15,
+			Weight:      10,
 		},
 		{
 			Name:        "same_content_type",
@@ -1230,7 +1433,7 @@ func getDefaultConfidenceRules() []config.ConfidenceRule {
 		{
 			Name:        "similar_content_length",
 			Description: "与原始响应长度相似",
-			Weight:      5,
+			Weight:      10,
 		},
 		{
 			Name:        "api_endpoint",
@@ -1282,7 +1485,7 @@ func processHighPriorityRequests() {
 			return true
 		}
 
-		r, ok := value.(*types.RequestResponseLog)
+		r, ok := value.(*RequestResponseLog)
 		if !ok || r == nil || r.Request == nil || r.Request.URL == nil {
 			return true
 		}
@@ -1318,7 +1521,7 @@ func processHighPriorityRequests() {
 				conf := config.GetConfig()
 
 				// 执行未授权访问检测 (如果已启用)
-				var unauthorizedResult *types.Result
+				var unauthorizedResult *Result
 				var unauthorizedErr error
 
 				if conf.UnauthorizedScan.Enabled {
@@ -1470,7 +1673,7 @@ func processLowPriorityRequests() {
 			return true
 		}
 
-		r, ok := value.(*types.RequestResponseLog)
+		r, ok := value.(*RequestResponseLog)
 		if !ok || r == nil || r.Request == nil || r.Request.URL == nil {
 			return true
 		}
@@ -1523,7 +1726,7 @@ func processLowPriorityRequests() {
 				conf := config.GetConfig()
 
 				// 执行未授权访问检测 (如果已启用)
-				var unauthorizedResult *types.Result
+				var unauthorizedResult *Result
 				var unauthorizedErr error
 
 				if conf.UnauthorizedScan.Enabled {
@@ -1654,7 +1857,7 @@ func cleanupStaleRequests() {
 
 	// 搜索长时间没有完成的请求
 	logs.Range(func(key any, value any) bool {
-		r, ok := value.(*types.RequestResponseLog)
+		r, ok := value.(*RequestResponseLog)
 		if !ok || r == nil || r.Request == nil || r.Request.URL == nil {
 			// 无效记录，直接删除
 			logs.Delete(key)
@@ -1740,7 +1943,7 @@ func handleConnectRequests() {
 	connectCount := 0
 
 	logs.Range(func(key any, value any) bool {
-		r, ok := value.(*types.RequestResponseLog)
+		r, ok := value.(*RequestResponseLog)
 		if !ok || r == nil || r.Request == nil {
 			return true
 		}
@@ -1874,33 +2077,79 @@ func getPatternDescription(name string) string {
 }
 
 // detectPrivilegeEscalation 执行越权检测
-func detectPrivilegeEscalation(r *types.RequestResponseLog) (*types.Result, error) {
+func detectPrivilegeEscalation(r *RequestResponseLog) (*Result, error) {
 	if r == nil || r.Request == nil || r.Response == nil {
 		utils.Warning("[越权检测] 请求/响应为空, 跳过越权检测")
 		return nil, fmt.Errorf("请求或响应为空")
 	}
 
+	// 获取配置
+	conf := config.GetConfig()
+	if conf == nil || !conf.PrivilegeEscalationScan.Enabled {
+		return nil, fmt.Errorf("越权扫描未启用或配置不存在")
+	}
+
+	// 检查URL是否匹配includePatterns
+	if len(conf.PrivilegeEscalationScan.IncludePatterns) > 0 {
+		urlPath := strings.ToLower(r.Request.URL.Path)
+		matched := false
+		for _, pattern := range conf.PrivilegeEscalationScan.IncludePatterns {
+			if strings.Contains(urlPath, strings.ToLower(pattern)) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			utils.Info("[越权检测] URL %s 不匹配includePatterns，跳过越权检测", r.Request.URL.Path)
+			return nil, fmt.Errorf("URL不匹配includePatterns")
+		}
+	}
+
 	// 创建结果对象
-	vulnResult := &types.Result{
+	vulnResult := &Result{
 		Method:   r.Request.Method,
 		Url:      r.Request.URL.String(),
-		VulnType: string(types.VulnPrivilegeEscalation),
+		VulnType: string(VulnPrivilegeEscalation),
 		Result:   "unknown",
+		ScanTime: time.Now().Format("2006-01-02 15:04:05"), // 添加扫描时间
 	}
 
-	// 检查配置是否已加载
-	if conf == nil {
-		utils.Warning("[越权检测] 配置为空, 跳过检测")
-		return nil, fmt.Errorf("配置为空")
+	// 提取请求方法、路径和协议版本
+	proto := r.Request.Proto
+	if proto == "" {
+		proto = "2" // 默认使用HTTP/2
 	}
 
-	// 检查是否启用越权扫描
-	if !conf.PrivilegeEscalationScan.Enabled {
-		utils.Warning("[越权检测] 越权扫描未启用，跳过检测")
-		return nil, fmt.Errorf("越权扫描未启用")
+	// 获取Host值
+	host := ""
+	if hostValues := r.Request.Header["Host"]; len(hostValues) > 0 {
+		host = hostValues[0]
+	} else if r.Request.URL != nil && r.Request.URL.Host != "" {
+		host = r.Request.URL.Host
 	}
 
-	// 检查请求路径是否包含潜在参数模式
+	// 构建完整的请求行
+	requestLine := fmt.Sprintf("%s %s %s",
+		r.Request.Method,
+		r.Request.URL.Path+"?"+r.Request.URL.RawQuery,
+		proto)
+
+	// 设置原始请求详情
+	vulnResult.RequestA = requestLine + "\n"
+	if !strings.Contains(formatHeaders(r.Request.Header), "Host: ") && host != "" {
+		vulnResult.RequestA += fmt.Sprintf("Host: %s\n", host)
+	}
+	vulnResult.RequestA += formatHeaders(r.Request.Header)
+
+	// 如果有请求体，添加空行后添加请求体
+	if len(r.Request.Body) > 0 {
+		vulnResult.RequestA += "\n" + string(r.Request.Body)
+	} else {
+		// 即使没有请求体，也添加空行表示请求头结束
+		vulnResult.RequestA += "\n"
+	}
+
+	// 检查请求是否包含需要进行越权测试的参数模式
 	hasPrivilegePattern := false
 	matchedParam := ""
 
@@ -1942,159 +2191,469 @@ func detectPrivilegeEscalation(r *types.RequestResponseLog) (*types.Result, erro
 		utils.Debug("[越权检测] 未配置参数模式，将检测所有请求")
 	}
 
-	// 使用AI分析越权
-	aiResult := ""
-	
-	// 获取AI模型
-	modelName := AIAPIS.GetModelNameByAIType(conf.AI)
-	aiURL := GetAPIURLByAIType(conf.AI) // 根据AI类型获取API URL
-	apiKey := conf.APIKeys[conf.AI]     // 从配置中获取API密钥
+	// 保存原始响应
+	respA := r.Response
 
-	// 格式化请求数据
-	reqA := formatRequest(r.Request)
-	respA := string(r.Response.Body)
-	respBStr := respA // 初始化为相同值，后续会修改
+	// 设置原始响应详情
+	vulnResult.RespBodyA =enc.ConvertString(string(respA.Body))
+	vulnResult.HeaderA = formatHeaders(respA.Header)
 
-	respStatusB := "200 OK" // 默认状态码
+	// 创建替换请求进行越权测试
+	newReq := cloneRequest(r.Request)
+	if newReq == nil {
+		utils.Warning("[越权检测] 无法克隆请求")
+		return nil, fmt.Errorf("无法克隆请求")
+	}
 
-	if respA == "" {
-		utils.Warning("[越权检测] 原始响应体为空")
-		vulnResult.Result = "unknown"
-		vulnResult.Reason = "原始响应体为空，无法进行分析"
+	// 使用headers2替换原始请求头
+	// 替换前先保存原始请求头
+	originalHeaders := make(http.Header)
+	for key, values := range newReq.Header {
+		originalHeaders[key] = values
+	}
+
+	// 清除原有授权相关头信息
+	for _, header := range conf.UnauthorizedScan.RemoveHeaders {
+		if len(newReq.Header[header]) > 0 {
+			utils.Debug("[越权检测] 移除原始请求中的认证头: %s", header)
+			delete(newReq.Header, header)
+		}
+	}
+
+	// 使用配置中的headers2替换
+	for key, value := range conf.Headers2 {
+		newReq.Header.Set(key, value)
+		utils.Debug("[越权检测] 设置headers2中的头: %s = %s", key, value)
+	}
+
+	utils.Info("[越权检测] 准备发送替换请求: %s %s", newReq.Method, newReq.URL.String())
+
+	// 发送请求
+	client := &http.Client{
+		Timeout: time.Duration(conf.Performance.ScanTimeout) * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // 不自动跟随重定向
+		},
+	}
+
+	respB, err := client.Do(newReq)
+	if err != nil {
+		utils.Warning("[越权检测] 发送替换请求失败: %v", err)
+		return nil, fmt.Errorf("发送替换请求失败: %v", err)
+	}
+	defer respB.Body.Close()
+
+	// 读取响应体
+	respBBody, err := io.ReadAll(respB.Body)
+	if err != nil {
+		utils.Warning("[越权检测] 读取替换请求响应体失败: %v", err)
+		return nil, fmt.Errorf("读取替换请求响应体失败: %v", err)
+	}
+
+	// 保存替换请求详情
+	vulnResult.RequestB = formatRequest(newReq)
+	vulnResult.RespBodyB = string(respBBody)
+	vulnResult.HeaderB = formatHeaders(respB.Header)
+
+	// 替换请求行
+	replacementRequestLine := fmt.Sprintf("%s %s %s",
+		newReq.Method,
+		newReq.URL.Path+"?"+newReq.URL.RawQuery,
+		proto)
+
+	// 构建完整的替换请求
+	requestB := replacementRequestLine + "\n"
+	if !strings.Contains(formatHeaders(newReq.Header), "Host: ") && host != "" {
+		requestB += fmt.Sprintf("Host: %s\n", host)
+	}
+	requestB += formatHeaders(newReq.Header)
+
+	// 如果有请求体，添加空行后添加请求体
+	if newReq.Body != nil {
+		// 读取请求体
+		bodyBytes, _ := io.ReadAll(newReq.Body)
+		if len(bodyBytes) > 0 {
+			requestB += "\n" + string(bodyBytes)
+		} else {
+			// 即使没有请求体，也添加空行表示请求头结束
+			requestB += "\n"
+		}
+	} else {
+		requestB += "\n"
+	}
+
+	// 设置最终的替换请求
+	vulnResult.RequestB = requestB
+
+	// 用于检测响应异常的状态码
+	statusCodes := map[int]string{
+		401: "未授权",
+		403: "禁止访问",
+		404: "资源不存在",
+		500: "服务器错误",
+	}
+
+	// 检查状态码是否表明授权失败
+	if errMsg, ok := statusCodes[respB.StatusCode]; ok {
+		utils.Info("[越权检测] 替换请求返回错误状态码: %d (%s)", respB.StatusCode, errMsg)
+		vulnResult.Result = "false"
+		vulnResult.Reason = fmt.Sprintf("替换请求返回错误状态码: %d (%s)", respB.StatusCode, errMsg)
 		return vulnResult, nil
 	}
 
-	// 开始AI分析
-	if modelName != "" && aiURL != "" && apiKey != "" {
-		// 调用AI进行分析
-		aiResult, err := AIAPIS.AIScan(modelName, aiURL, apiKey, reqA, respA, respBStr, respStatusB)
-		if err != nil {
-			utils.Warning("[越权检测] AI分析失败: %v", err)
-			vulnResult.Result = "unknown"
-			vulnResult.Reason = fmt.Sprintf("AI分析失败: %v", err)
-			return vulnResult, nil
+	// 如果替换请求状态码成功(2xx)，进一步分析响应内容
+	if respB.StatusCode >= 200 && respB.StatusCode < 300 {
+		// 准备检测敏感数据的工具
+		sensitivePatternsMap := make(map[string]*regexp.Regexp)
+
+		//// 编译敏感数据正则表达式
+		//for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.Patterns {
+		//	re, err := regexp.Compile(pattern.Pattern)
+		//	if err != nil {
+		//		utils.Warning("[越权检测] 编译敏感数据模式失败: %v, 模式=%s", err, pattern.Pattern)
+		//		continue
+		//	}
+		//	sensitivePatternsMap[pattern.Name] = re
+		//}
+
+		// 检查JSON格式的敏感数据
+		for _, pattern := range conf.UnauthorizedScan.SensitiveDataPatterns.JsonPatterns {
+			re, err := regexp.Compile(pattern.Pattern)
+			if err != nil {
+				utils.Warning("[越权检测] 编译JSON敏感数据模式失败: %v, 模式=%s", err, pattern.Pattern)
+				continue
+			}
+			sensitivePatternsMap[pattern.Name+"_json"] = re
 		}
 
-		// 解析AI返回的结果
-		var aiResponse struct {
-			Res    string `json:"res"`
-			Reason string `json:"reason"`
-		}
+		// 检测原始响应中的敏感数据
+		respAStr := string(respA.Body)
+		originalSensitiveData := []string{}
 
-		// 首先尝试直接解析
-		err = json.Unmarshal([]byte(aiResult), &aiResponse)
-		if err != nil {
-			utils.Warning("[越权检测] 解析AI返回结果失败: %v, 原始数据: %s", err, aiResult)
-			// 为了调试，记录更详细的AI响应内容
-			utils.Error("[越权检测] AI响应详细内容 (前500字符): %s", trimString(aiResult, 500))
-			utils.Error("[越权检测] 字符代码检查 (前100字符):")
-			for i, c := range aiResult {
-				if i >= 100 {
-					break
-				}
-				utils.Error("  字符位置[%d]: '%c' (ASCII: %d, 十六进制: %X)", i, c, c, c)
-				if c == '`' || c == '"' || c == '\\' {
-					utils.Error("  *** 可能问题字符 at %d: '%c' ***", i, c)
-				}
-			}
-
-			// 尝试手动解析
-			success := false
-
-			// 方法1: 尝试以"json"开头的情况
-			if strings.HasPrefix(strings.TrimSpace(aiResult), "json") {
-				jsonStartIndex := strings.Index(aiResult, "{")
-				if jsonStartIndex > 0 {
-					utils.Debug("[越权检测] 检测到json前缀，尝试从位置%d开始解析", jsonStartIndex)
-					jsonPart := aiResult[jsonStartIndex:]
-
-					err2 := json.Unmarshal([]byte(jsonPart), &aiResponse)
-					if err2 == nil {
-						utils.Info("[越权检测] JSON前缀处理后解析成功")
-						success = true
-					} else {
-						utils.Warning("[越权检测] JSON前缀处理后仍解析失败: %v", err2)
-					}
-				}
-			}
-
-			// 方法2: 使用正则表达式提取关键信息
-			if !success {
-				// 查找是否有"true"或"false"的结果
-				resultRe := regexp.MustCompile(`"res"\s*:\s*"(true|false|unknown)"`)
-				reasonRe := regexp.MustCompile(`"reason"\s*:\s*"([^"]*)"`)
-
-				resultMatches := resultRe.FindStringSubmatch(aiResult)
-				reasonMatches := reasonRe.FindStringSubmatch(aiResult)
-
-				if len(resultMatches) > 1 {
-					aiResponse.Res = resultMatches[1]
-					if len(reasonMatches) > 1 {
-						aiResponse.Reason = reasonMatches[1]
-					} else {
-						aiResponse.Reason = "无法解析原因"
-					}
-					utils.Info("[越权检测] 使用正则表达式成功提取结果: %s", aiResponse.Res)
-					success = true
-				}
-			}
-
-			// 方法3: 使用简单字符串检查
-			if !success {
-				if strings.Contains(aiResult, `"res":"true"`) || strings.Contains(aiResult, `"res": "true"`) {
-					aiResponse.Res = "true"
-					utils.Info("[越权检测] 使用字符串匹配提取到结果: true")
-					success = true
-				} else if strings.Contains(aiResult, `"res":"false"`) || strings.Contains(aiResult, `"res": "false"`) {
-					aiResponse.Res = "false"
-					utils.Info("[越权检测] 使用字符串匹配提取到结果: false")
-					success = true
-				} else if strings.Contains(aiResult, `"res":"unknown"`) || strings.Contains(aiResult, `"res": "unknown"`) {
-					aiResponse.Res = "unknown"
-					utils.Info("[越权检测] 使用字符串匹配提取到结果: unknown")
-					success = true
-				}
-
-				// 尝试提取原因
-				if success {
-					reasonStart := strings.Index(aiResult, `"reason":"`)
-					if reasonStart > 0 {
-						reasonStart += 10 // 跳过 "reason":"
-						reasonEnd := strings.Index(aiResult[reasonStart:], `"`)
-						if reasonEnd > 0 {
-							aiResponse.Reason = aiResult[reasonStart : reasonStart+reasonEnd]
-							utils.Info("[越权检测] 使用字符串匹配提取到原因: %s", aiResponse.Reason)
+		for name, re := range sensitivePatternsMap {
+			if re.MatchString(respAStr) {
+				matches := re.FindAllString(respAStr, -1)
+				if len(matches) > 0 {
+					for _, match := range matches {
+						originalSensitiveData = append(originalSensitiveData, fmt.Sprintf("%s: %s", name, match))
+						if len(originalSensitiveData) >= 5 {
+							break
 						}
 					}
 				}
-			}
-
-			// 如果仍然无法解析，使用默认值
-			if !success {
-				utils.Warning("[越权检测] 所有解析方法均失败，使用默认值")
-				aiResponse.Res = "unknown"
-				aiResponse.Reason = "AI响应解析失败"
+				if len(originalSensitiveData) >= 5 {
+					break
+				}
 			}
 		}
 
-		// 设置结果
-		vulnResult.Result = aiResponse.Res
-		vulnResult.Reason = aiResponse.Reason
+		// 检测替换请求响应中的敏感数据
+		respBStr := string(respBBody)
+		sensitivePatternsFound := []string{}
 
-		// 添加详细说明
-		utils.Info("[越权检测] AI分析结果: %s, 原因: %s", aiResponse.Res, aiResponse.Reason)
-	} else {
-		// AI分析不可用，执行本地规则判断
-		utils.Warning("[越权检测] AI分析未启用或配置不完整，使用本地规则")
+		for name, re := range sensitivePatternsMap {
+			if re.MatchString(respBStr) {
+				matches := re.FindAllString(respBStr, -1)
+				if len(matches) > 0 {
+					for _, match := range matches {
+						sensitivePatternsFound = append(sensitivePatternsFound, fmt.Sprintf("%s: %s", name, match))
+						if len(sensitivePatternsFound) >= 5 {
+							break
+						}
+					}
+				}
+				if len(sensitivePatternsFound) >= 5 {
+					break
+				}
+			}
+		}
 
-		// 本地规则逻辑...
-		if len(matchedParam) > 0 {
-			vulnResult.Result = "unknown"
-			vulnResult.Reason = fmt.Sprintf("找到可能的越权参数 %s，但无法确定是否存在漏洞", matchedParam)
+		// 保存敏感数据检测结果
+		vulnResult.SensitiveData = sensitivePatternsFound
+
+		// 1. 如果替换响应中包含敏感数据，分析是否是真正的越权
+		if len(sensitivePatternsFound) > 0 {
+			// 检查敏感数据是否在原始响应和替换响应中都存在
+			if len(originalSensitiveData) > 0 {
+				// 计算两个敏感数据集的交集
+				commonSensitiveData := 0
+				sensitiveDiffs := []string{}
+
+				// 简单比较：检查替换响应中的每个敏感数据是否存在于原始响应中
+				for _, replacement := range sensitivePatternsFound {
+					found := false
+					for _, original := range originalSensitiveData {
+						if replacement == original {
+							found = true
+							commonSensitiveData++
+							break
+						}
+					}
+					if !found {
+						sensitiveDiffs = append(sensitiveDiffs, replacement)
+					}
+				}
+
+
+				// 如果两者完全相同，可能是公开数据,也可能是存在越权，继续使用相似度判断
+				if len(sensitivePatternsFound) > 0 && commonSensitiveData == len(sensitivePatternsFound) && commonSensitiveData == len(originalSensitiveData) {
+					utils.Info("[越权检测] 替换请求获取到与原始响应完全相同的敏感数据，极大可能存在越权风险")
+
+					// 继续使用相似度判断
+					utils.Info("[越权检测] 响应体相似度 ->responseA: %s \n responseB: %s", respAStr, respBStr)
+					similarityScore,reason,vulnStatus := calculateResponseSimilarity(respAStr, respBStr)
+					utils.Info("[越权检测] 响应体相似度: %.2f", similarityScore)
+
+					if similarityScore >= conf.PrivilegeEscalationScan.SimilarityThreshold && vulnStatus{
+						// 标记为漏洞存在，因为敏感数据完全相同
+						vulnResult.Result = "true"
+						vulnResult.Reason = fmt.Sprintf("替换请求返回相同敏感数据且响应相似度高 %s (%.2f >= %.2f)，极大可能存在越权，请人工复测确认",
+							reason, similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold)
+					} else if !vulnStatus{
+						vulnResult.Result = "false"
+						vulnResult.Reason = fmt.Sprintf("%s",reason)
+					}else{
+						vulnResult.Result = "unknown"
+						vulnResult.Reason = fmt.Sprintf("替换请求获取了相同的敏感数据，但响应整体不相似 %s (%.2f < %2.f)，请人工确认",reason, similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold)
+					}
+					return vulnResult, nil
+				}else{
+					// 原始响应中有敏感数据，但替换响应也有 - 需要进一步分析
+					similarityScore,reason,vulnStatus := calculateResponseSimilarity(respAStr, respBStr)
+					utils.Info("[越权检测] 响应体相似度: %.2f", similarityScore)
+
+					if similarityScore >= conf.PrivilegeEscalationScan.SimilarityThreshold && vulnStatus{
+						// 标记为漏洞存在，因为敏感数据完全相同
+						vulnResult.Result = "true"
+						vulnResult.Reason = fmt.Sprintf("替换请求返回响应相似度较高，且均包含敏感数据 %s (%.2f >= %.2f)，可能存在越权，请人工确认",
+							reason, similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold)
+					} else{
+						vulnResult.Result = "false"
+						vulnResult.Reason = fmt.Sprintf("%s",reason)
+					}
+					return vulnResult, nil
+				}
+			} else {
+				// 原始响应中没有敏感数据，但替换响应有 - 很可能是不同的数据
+				utils.Info("[越权检测] 原始响应无敏感数据，替换请求获取了敏感数据: %v", sensitivePatternsFound)
+				vulnResult.Result = "unknown"
+				vulnResult.Reason = fmt.Sprintf("替换请求获取了敏感数据，而原始请求没有: %s", strings.Join(sensitivePatternsFound[:min(3, len(sensitivePatternsFound))], ", "))
+				return vulnResult, nil
+			}
+		}else{
+			// 不包含敏感数据，继续使用响应体相似度判断是否存在越权
+			utils.Info("[越权检测] 替换请求未获取敏感数据，继续使用响应体相似度判断是否存在越权")
+			similarityScore,reason,vulnStatus := calculateResponseSimilarity(respAStr, respBStr)
+					utils.Info("[越权检测] 响应体相似度: %.2f", similarityScore)
+
+					if similarityScore >= conf.PrivilegeEscalationScan.SimilarityThreshold && vulnStatus{
+						// 满足相似度判定条件，标记为漏洞存在
+						vulnResult.Result = "true"
+						vulnResult.Reason = fmt.Sprintf("替换响应响应相似度高 %s (%.2f >= %.2f)，极大可能存在越权，请人工复测确认",
+							reason, similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold)
+					} else {
+						vulnResult.Result = "false"
+						vulnResult.Reason = fmt.Sprintf("【很可能没漏洞】%s",reason)
+					}		
+		}
+
+		if vulnResult.Result == "true" || vulnResult.Result == "false" {
+			// 未知结果，继续使用AI分析
+			return vulnResult, nil
+		}
+
+		// 内置规则检测流程结束，若开启了AI功能，则继续使用AI分析，未开启的话退出
+		if !conf.EnableAI{
+			return vulnResult, nil
+		}
+
+
+
+		// 2. 使用AI分析两个响应的异同，判断是否存在越权[对于特殊情况进行兜底，包括越权删除、修改、添加等，不基于敏感数据评定的越权]
+		utils.Info("[越权检测] 使用AI分析两个响应是否存在越权")
+
+		// 获取AI分析配置
+		aiType := conf.AI
+		var apiUrl string
+		var apiKey string
+
+		// 设置API URL和Key
+		switch aiType {
+		case "deepseek":
+			//apiUrl = "https://api.deepseek.com/v1/chat/completions"
+			apiUrl = "https://oneai.17usoft.com/v1/chat/completions"
+			apiKey = conf.APIKeys.DeepSeek
+		case "kimi":
+			apiUrl = "https://api.moonshot.cn/v1/chat/completions"
+			apiKey = conf.APIKeys.Kimi
+		case "qianwen":
+			apiUrl = "https://api.qianwen.com/v1/chat/completions"
+			apiKey = conf.APIKeys.Qianwen
+		case "gpt":
+			apiUrl = "https://api.openai.com/v1/chat/completions"
+			apiKey = conf.APIKeys.Gpt
+		case "glm":
+			apiUrl = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+			apiKey = conf.APIKeys.Glm
+		default:
+			// 默认使用 deepseek
+			apiUrl = "https://api.deepseek.com/v1/chat/completions"
+			apiKey = conf.APIKeys.DeepSeek
+			aiType = "deepseek"
+		}
+
+		// 获取模型名称
+		modelName := aiapis.GetModelNameByAIType(aiType)
+
+		// 调用AI分析
+		aiResult, err := aiapis.AIScan(
+			modelName,
+			apiUrl,
+			apiKey,
+			vulnResult.RequestA,
+			vulnResult.RespBodyA,
+			vulnResult.RespBodyB,
+			fmt.Sprintf("%d", respB.StatusCode),
+		)
+
+		if err != nil {
+			utils.Warning("[越权检测] AI分析失败: %v", err)
+			// AI分析失败，使用备选方法：检查响应体相似度
+			similarityScore,reason,vulnStatus := calculateResponseSimilarity(string(respA.Body), string(respBBody))
+			utils.Info("[越权检测] 响应体相似度: %.2f", similarityScore)
+
+			if similarityScore >= conf.PrivilegeEscalationScan.SimilarityThreshold {
+				// 检查是否有敏感数据
+				hasSensitiveData := len(vulnResult.SensitiveData) > 0
+
+				if hasSensitiveData && vulnStatus{
+					// 有敏感数据，直接判定为真
+					vulnResult.Result = "true"
+					vulnResult.Reason = fmt.Sprintf("替换请求响应与原始响应相似度较高 %s (%.2f >= %.2f)且包含敏感数据，可能存在越权访问",
+						reason, similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold)
+				} else if !vulnStatus{
+					// 没有敏感数据，标记为需人工确认
+					vulnResult.Result = "false"
+					vulnResult.Reason = fmt.Sprintf("%s",reason)
+						
+				} else {
+					// 没有敏感数据，标记为需人工确认
+					vulnResult.Result = "unknown"
+					vulnResult.Reason = fmt.Sprintf("替换请求响应与原始响应相似度较高 %s (%.2f >= %.2f)但未发现敏感数据，疑似公共接口，请人工确认",
+						reason, similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold)
+				}
+			} else if !vulnStatus {
+				// 没有敏感数据，标记为需人工确认
+				vulnResult.Result = "false"
+				vulnResult.Reason = fmt.Sprintf("%s",reason)
+			} else {
+				vulnResult.Result = "unknown"
+				vulnResult.Reason = fmt.Sprintf("AI分析失败，原因 ：%s",
+					reason)
+			}
 		} else {
-			vulnResult.Result = "false"
-			vulnResult.Reason = "未找到可能的越权参数"
+			// 解析AI返回的结果
+			var aiResponse struct {
+				Res    string `json:"res"`
+				Reason string `json:"reason"`
+			}
+
+			// 首先尝试直接解析
+			err = json.Unmarshal([]byte(aiResult), &aiResponse)
+			if err != nil {
+				utils.Warning("[越权检测] 解析AI返回结果失败: %v, 原始数据: %s", err, aiResult)
+				// 为了调试，记录更详细的AI响应内容
+				utils.Error("[越权检测] AI响应详细内容 (前500字符): %s", trimString(aiResult, 500))
+				utils.Error("[越权检测] 字符代码检查 (前100字符):")
+				for i, c := range aiResult {
+					if i >= 100 {
+						break
+					}
+					utils.Error("  字符位置[%d]: '%c' (ASCII: %d, 十六进制: %X)", i, c, c, c)
+					if c == '`' || c == '"' || c == '\\' {
+						utils.Error("  *** 可能问题字符 at %d: '%c' ***", i, c)
+					}
+				}
+
+				// 尝试手动解析
+				success := false
+
+				// 方法1: 尝试以"json"开头的情况
+				if strings.HasPrefix(strings.TrimSpace(aiResult), "json") {
+					jsonStartIndex := strings.Index(aiResult, "{")
+					if jsonStartIndex > 0 {
+						utils.Debug("[越权检测] 检测到json前缀，尝试从位置%d开始解析", jsonStartIndex)
+						jsonPart := aiResult[jsonStartIndex:]
+
+						err2 := json.Unmarshal([]byte(jsonPart), &aiResponse)
+						if err2 == nil {
+							utils.Info("[越权检测] JSON前缀处理后解析成功")
+							success = true
+						} else {
+							utils.Warning("[越权检测] JSON前缀处理后仍解析失败: %v", err2)
+						}
+					}
+				}
+
+				// 方法2: 使用正则表达式提取关键信息
+				if !success {
+					resPattern := regexp.MustCompile(`"res"\s*:\s*"([^"]+)"`)
+					reasonPattern := regexp.MustCompile(`"reason"\s*:\s*"([^"]+)"`)
+
+					resMatches := resPattern.FindStringSubmatch(aiResult)
+					reasonMatches := reasonPattern.FindStringSubmatch(aiResult)
+
+					if len(resMatches) > 1 && len(reasonMatches) > 1 {
+						utils.Debug("[越权检测] 通过正则表达式提取结果")
+						aiResponse.Res = resMatches[1]
+						aiResponse.Reason = reasonMatches[1]
+						success = true
+					}
+				}
+
+				// 方法3: 尝试去除特殊字符后重新解析
+				if !success {
+					utils.Debug("[越权检测] 尝试清理特殊字符后重新解析")
+					cleanedResult := strings.Replace(aiResult, "`", "", -1)
+					cleanedResult = strings.Replace(cleanedResult, "\"\"", "\"", -1)
+
+					// 尝试找到并只保留JSON对象部分
+					jsonStartIndex := strings.Index(cleanedResult, "{")
+					jsonEndIndex := strings.LastIndex(cleanedResult, "}")
+
+					if jsonStartIndex >= 0 && jsonEndIndex > jsonStartIndex {
+						jsonPart := cleanedResult[jsonStartIndex : jsonEndIndex+1]
+						utils.Debug("[越权检测] 提取JSON部分: %s", trimString(jsonPart, 100))
+
+						err2 := json.Unmarshal([]byte(jsonPart), &aiResponse)
+						if err2 == nil {
+							utils.Info("[越权检测] 清理后成功解析JSON部分")
+							success = true
+						}
+					}
+				}
+
+				if success {
+					utils.Info("[越权检测] 通过替代方法解析AI结果: %s, 原因: %s", aiResponse.Res, aiResponse.Reason)
+					vulnResult.Result = aiResponse.Res
+					vulnResult.Reason = aiResponse.Reason
+				} else {
+					vulnResult.Result = "unknown"
+					vulnResult.Reason = "AI分析结果解析失败: " + err.Error()
+				}
+			} else {
+				utils.Info("[越权检测] AI分析结果: %s, 原因: %s", aiResponse.Res, aiResponse.Reason)
+				vulnResult.Result = aiResponse.Res
+				vulnResult.Reason = aiResponse.Reason
+			}
 		}
+	} else {
+		// 处理非2xx状态码
+		vulnResult.Result = "unknown"
+		vulnResult.Reason = fmt.Sprintf("替换请求返回非标准状态码: %d", respB.StatusCode)
 	}
 
 	// 记录检测结果
@@ -2105,19 +2664,19 @@ func detectPrivilegeEscalation(r *types.RequestResponseLog) (*types.Result, erro
 }
 
 // 计算响应体相似度的辅助函数
-func calculateResponseSimilarity(respA, respB string) float64 {
+func calculateResponseSimilarity(respA, respB string) (float64,string,bool) {
 	// 获取配置
 	conf := config.GetConfig()
 	if conf == nil {
 		utils.Warning("[相似度计算] 配置对象为空")
-		return 0.0
+		return 0.0,"[相似度计算] 配置对象为空",false
 	}
 
 	// 首先检查respB是否包含错误信息的特征
 	for _, errorPattern := range conf.RespBodyBWhiteList {
 		if strings.Contains(respB, errorPattern) {
 			utils.Info("[相似度计算] 替换请求响应包含错误信息: %s", errorPattern)
-			return 0.0 // 如果响应包含错误信息，直接返回低相似度
+			return 0.0,fmt.Sprintf("[相似度计算] 替换请求响应包含错误信息: %s", errorPattern),false // 如果响应包含错误信息，直接返回低相似度
 		}
 	}
 
@@ -2130,25 +2689,19 @@ func calculateResponseSimilarity(respA, respB string) float64 {
 			if isSuccess, exists := mapB["isSuccess"]; exists {
 				if success, ok := isSuccess.(bool); ok && !success {
 					utils.Info("[相似度计算] 响应JSON包含失败标志: isSuccess=false")
-					return 0.0
+					return 0.0,fmt.Sprintf("[相似度计算] 响应JSON包含失败标志: isSuccess=false"),false
 				}
 			}
 
-			// 检查空数组或空对象
-			if passengerList, exists := mapB["passengerList"]; exists {
-				if list, ok := passengerList.([]interface{}); ok && len(list) == 0 {
-					utils.Info("[相似度计算] 响应包含空数组: passengerList=[]")
-					return 0.0
-				}
-			}
+			
 
 			// 检查error相关字段
 			for key := range mapB {
 				if strings.Contains(strings.ToLower(key), "error") ||
 					strings.Contains(strings.ToLower(key), "err") ||
-					strings.Contains(strings.ToLower(key), "message") {
+					strings.Contains(strings.ToLower(key), "fail") {
 					utils.Info("[相似度计算] 响应JSON包含错误相关字段: %s", key)
-					return 0.0
+					return 0.0,fmt.Sprintf("[相似度计算] 响应JSON包含错误相关字段: %s", key),false
 				}
 			}
 		}
@@ -2157,14 +2710,14 @@ func calculateResponseSimilarity(respA, respB string) float64 {
 	// 检查respB是否与respA有显著不同的长度 (如果差异超过80%，视为不相似)
 	if math.Abs(float64(len(respA)-len(respB)))/float64(max(len(respA), len(respB))) > 0.8 {
 		utils.Info("[相似度计算] 响应长度差异显著: 原始=%d, 替换=%d", len(respA), len(respB))
-		return 0.0
+		return 0.0,fmt.Sprintf("[相似度计算] 响应长度差异显著: 原始=%d, 替换=%d", len(respA), len(respB)),false
 	}
 
 	// 使用编辑距离计算相似度
 	// 简单实现：计算编辑距离的归一化相似度
 	maxLen := max(len(respA), len(respB))
 	if maxLen == 0 {
-		return 1.0 // 两个都是空字符串
+		return 1.0,fmt.Sprintf("[相似度计算] 两个都是空字符串"),true // 两个都是空字符串
 	}
 
 	// 计算编辑距离
@@ -2172,7 +2725,7 @@ func calculateResponseSimilarity(respA, respB string) float64 {
 
 	// 归一化为相似度 (1 - 距离/最大长度)
 	similarity := 1.0 - float64(distance)/float64(maxLen)
-	return similarity
+	return similarity,fmt.Sprintf("[相似度计算] 相似度: %.2f", similarity),true
 }
 
 // 计算Levenshtein距离的函数
@@ -2223,7 +2776,7 @@ func formatRequest(req *http.Request) string {
 	}
 
 	// 格式化请求行
-	requestLine := fmt.Sprintf("%s %s HTTP/%s",
+	requestLine := fmt.Sprintf("%s %s %s",
 		req.Method,
 		req.URL.String(),
 		req.Proto)
@@ -2249,276 +2802,5 @@ func trimString(s string, maxLength int) string {
 		return s
 	}
 	return s[:maxLength] + "..."
-}
-// detectSqlInjection 执行SQL注入检测
-func detectSqlInjection(r *types.RequestResponseLog) (*types.Result, error) {
-	// 创建结果对象
-	vulnResult := &types.Result{
-		VulnType: string(types.VulnSqlInjection),
-		Result:   "false", // 默认为未发现漏洞
-	}
-
-	if r == nil || r.Request == nil || r.Response == nil {
-		utils.Warning("[SQL注入检测] 请求或响应为空，跳过检测")
-		return nil, fmt.Errorf("请求或响应为空")
-	}
-
-	// 设置基本信息
-	vulnResult.Method = r.Request.Method
-	vulnResult.Url = r.Request.URL.String()
-
-	// 检查是否启用SQL注入扫描
-	if conf == nil || !conf.SqlInjectionScan.Enabled {
-		utils.Warning("[SQL注入检测] SQL注入扫描未启用，跳过检测")
-		return nil, fmt.Errorf("SQL注入扫描未启用")
-	}
-
-	// 敏感响应特征
-	sqlErrorPatterns := []string{
-		`SQL syntax.*?MySQL`, `Warning.*?\\Wmysqli?_`, `MySQLSyntaxErrorException`,
-		`valid MySQL result`, `check the manual that (corresponds to|fits) your MySQL server version`,
-		`Unknown column '[^']+' in 'field list'`, `MySqlClient\\.", "MySQL server version for the right syntax to use`,
-		`com\\.mysql\\.jdbc`, `Zend_Db_(Adapter|Statement)_Mysqli_Exception`,
-		`Syntax error or access violation`, `Unclosed quotation mark after the character string`,
-		`Incorrect syntax near`, `ODBC SQL Server Driver`, `SQLServer JDBC Driver`, `getConnection`,
-		`SQLServerException`, `Unclosed quotation mark after the character string`,
-		`ODBC SQL Server Driver`, `Microsoft SQL Native Client`, `Microsoft OLE DB Provider for SQL Server`,
-		`Microsoft OLE DB Provider for Oracle`, `Oracle error`, `ORA-[0-9][0-9][0-9][0-9]`,
-		`quoted string not properly terminated`, `DG4ODBC`, `Error ORA-`, `SQL ERROR`,
-		`Syntax error:.*?at line`, `Incorrect syntax near`, `Syntax error.*?in query expression`,
-		`PostgreSQL.*?ERROR`, `Warning.*?\\Wpg_`, `valid PostgreSQL result`,
-		`Npgsql\\.`, `PG::SyntaxError:`, `org\\.postgresql\\.util\\.PSQLException`,
-		`ERROR:\\s\\ssyntax error at or near`, `ERROR: parser: parse error at or near`,
-		`SQLite/JDBCDriver`, `SQLite\\.Exception`, `System\\.Data\\.SQLite\\.SQLiteException`,
-		`Warning.*?\\W(sqlite_|SQLite3::)`, `\\[SQLITE_ERROR\\]`,
-		`SQL error.*?ORA-[0-9]+`, `Oracle error`, `Oracle.*?Driver`, `Warning.*?\\Woci_`,
-		`Warning.*?\\Wora_`, `DB2 SQL error`, `Syntax error.*?DB2`,
-		`Warning.*?IBM_DB2`, `Warning.*?DB2`, `Ingres SQLSTATE`, `Ingres\\W.*?Driver`,
-		`Warning.*?ingres_`, `Syntax error.*?Ingres`, `Microsoft Access Driver`,
-		`Access Database Engine`, `Microsoft JET Database Engine`,
-		`ODBC Microsoft Access`, `Syntax error \\(missing operator\\) in query expression`}
-
-	// 匹配是否包含SQL错误
-	originalRespBody := string(r.Response.Body)
-	originalStatusCode := r.Response.StatusCode
-
-	// 记录原始响应信息(用于调试)
-	utils.Debug("[SQL注入检测] 原始响应状态码: %d, 内容长度: %d", originalStatusCode, len(originalRespBody))
-
-	// 检查原始响应是否已经包含SQL错误信息
-	for _, pattern := range sqlErrorPatterns {
-		re, err := regexp.Compile(pattern)
-		if err != nil {
-			utils.Warning("[SQL注入检测] 编译SQL错误模式失败: %v", err)
-			continue
-		}
-
-		if re.MatchString(originalRespBody) {
-			utils.Warning("[SQL注入检测] 原始响应已包含SQL错误信息，跳过测试: %s", pattern)
-			vulnResult.Result = "unknown"
-			vulnResult.Reason = "原始响应已包含SQL错误信息，请人工确认是否存在SQL注入"
-			return vulnResult, nil
-		}
-	}
-
-	// 获取要测试的参数
-	paramsToTest := make(map[string]string)
-	valueToTest := []string{"'", "\"", "\\", "--", "#", "1=1", "1=2", "' OR '1'='1", "' AND '1'='2", "'; --", "\" OR \"1\"=\"1", "\" AND \"1\"=\"2", "\"; --"}
-
-	// 提取URL查询参数
-	querys := r.Request.URL.Query()
-	for key, values := range querys {
-		if len(values) > 0 {
-			paramsToTest[key] = values[0]
-		}
-	}
-
-	// 提取请求体参数
-	if len(r.Request.Body) > 0 {
-		// 尝试解析不同格式的请求体
-		requestBody := string(r.Request.Body)
-
-		// 解析JSON格式
-		var jsonMap map[string]interface{}
-		if err := json.Unmarshal([]byte(requestBody), &jsonMap); err == nil {
-			// 成功解析为JSON，提取参数
-			for key, value := range jsonMap {
-				switch v := value.(type) {
-				case string:
-					paramsToTest[key] = v
-				case float64, int, bool:
-					paramsToTest[key] = fmt.Sprintf("%v", v)
-				}
-			}
-		} else {
-			// 尝试解析为表单格式
-			values, err := url.ParseQuery(requestBody)
-			if err == nil {
-				for key, vals := range values {
-					if len(vals) > 0 {
-						paramsToTest[key] = vals[0]
-					}
-				}
-			} else {
-				// 无法解析，直接记录整个请求体
-				utils.Debug("[SQL注入检测] 无法解析请求体: %s", requestBody)
-			}
-		}
-	}
-
-	// 没有参数可测试，跳过
-	if len(paramsToTest) == 0 {
-		utils.Info("[SQL注入检测] 未找到可测试的参数，跳过: %s", r.Request.URL.String())
-		return nil, fmt.Errorf("未找到可测试的参数")
-	}
-
-	utils.Info("[SQL注入检测] 找到 %d 个参数可测试", len(paramsToTest))
-
-	// 创建HTTP客户端
-	client := &http.Client{
-		Timeout: time.Duration(conf.Performance.ScanTimeout) * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // 不自动跟随重定向
-		},
-	}
-
-	// 实际测试开始
-	for paramKey, paramValue := range paramsToTest {
-		utils.Debug("[SQL注入检测] 测试参数 %s=%s", paramKey, paramValue)
-
-		// 对每个参数测试不同的SQL注入载荷
-		for _, payload := range valueToTest {
-			// 创建新的请求，替换参数值
-			newReq := cloneRequest(r.Request)
-			if newReq == nil {
-				utils.Warning("[SQL注入检测] 无法克隆请求")
-				continue
-			}
-
-			// 注入点：URL参数
-			if r.Request.URL.Query().Has(paramKey) {
-				q := newReq.URL.Query()
-				q.Set(paramKey, payload)
-				newReq.URL.RawQuery = q.Encode()
-				utils.Debug("[SQL注入检测] 在URL参数中注入: %s=%s", paramKey, payload)
-			}
-
-			// 注入点：请求体
-			if len(r.Request.Body) > 0 {
-				requestBody := string(r.Request.Body)
-
-				// JSON格式请求体
-				var jsonMap map[string]interface{}
-				if err := json.Unmarshal([]byte(requestBody), &jsonMap); err == nil {
-					// 当参数存在于JSON中时进行替换
-					if _, exists := jsonMap[paramKey]; exists {
-						jsonMap[paramKey] = payload
-						modifiedJson, err := json.Marshal(jsonMap)
-						if err == nil {
-							newReq.Body = io.NopCloser(bytes.NewReader(modifiedJson))
-							newReq.ContentLength = int64(len(modifiedJson))
-							utils.Debug("[SQL注入检测] 在JSON请求体中注入: %s=%s", paramKey, payload)
-						}
-					}
-				} else {
-					// 表单格式请求体
-					values, err := url.ParseQuery(requestBody)
-					if err == nil && values.Has(paramKey) {
-						values.Set(paramKey, payload)
-						formData := values.Encode()
-						newReq.Body = io.NopCloser(strings.NewReader(formData))
-						newReq.ContentLength = int64(len(formData))
-						utils.Debug("[SQL注入检测] 在表单请求体中注入: %s=%s", paramKey, payload)
-					}
-				}
-			}
-
-			// 发送请求
-			resp, err := client.Do(newReq)
-			if err != nil {
-				utils.Warning("[SQL注入检测] 发送请求失败: %v", err)
-				continue
-			}
-
-			// 读取响应体
-			respBody, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if err != nil {
-				utils.Warning("[SQL注入检测] 读取响应失败: %v", err)
-				continue
-			}
-
-			respBodyStr := string(respBody)
-			utils.Debug("[SQL注入检测] 测试参数 %s=%s, 响应状态码: %d, 内容长度: %d", 
-				paramKey, payload, resp.StatusCode, len(respBodyStr))
-
-			// 检查响应中是否包含SQL错误特征
-			for _, pattern := range sqlErrorPatterns {
-				re, err := regexp.Compile(pattern)
-				if err != nil {
-					utils.Warning("[SQL注入检测] 编译模式失败: %v", err)
-					continue
-				}
-
-				if re.MatchString(respBodyStr) {
-					matches := re.FindStringSubmatch(respBodyStr)
-					matchText := ""
-					if len(matches) > 0 {
-						matchText = matches[0]
-						if len(matchText) > 50 {
-							matchText = matchText[:50] + "..."
-						}
-					}
-
-					utils.Info("[SQL注入检测] 检测到SQL注入点 - 参数: %s, 载荷: %s, 匹配模式: %s, 匹配内容: %s",
-						paramKey, payload, pattern, matchText)
-
-					vulnResult.Result = "true"
-					vulnResult.Reason = fmt.Sprintf("在参数 %s 使用载荷 '%s' 时检测到SQL错误信息: %s",
-						paramKey, payload, matchText)
-					vulnResult.Parameter = paramKey
-					vulnResult.Payload = payload
-
-					// 添加详细说明
-					vulnResult.Description = fmt.Sprintf(
-						"SQL注入漏洞存在于参数: %s\n"+
-							"使用的载荷: %s\n"+
-							"匹配的错误模式: %s\n"+
-							"响应中的错误信息: %s\n"+
-							"请检查应用程序对用户输入的验证和清理机制。",
-						paramKey, payload, pattern, matchText)
-
-					return vulnResult, nil
-				}
-			}
-
-			// 如果响应状态码有显著变化，也可能是SQL注入
-			if (originalStatusCode >= 200 && originalStatusCode < 300) && (resp.StatusCode >= 500) {
-				utils.Info("[SQL注入检测] 检测到状态码异常变化 - 参数: %s, 载荷: %s, 原始状态码: %d, 当前状态码: %d",
-					paramKey, payload, originalStatusCode, resp.StatusCode)
-
-				vulnResult.Result = "true"
-				vulnResult.Reason = fmt.Sprintf("在参数 %s 使用载荷 '%s' 时服务器返回错误状态码: %d (原始状态码: %d)",
-					paramKey, payload, resp.StatusCode, originalStatusCode)
-				vulnResult.Parameter = paramKey
-				vulnResult.Payload = payload
-
-				return vulnResult, nil
-			}
-
-			// 避免发送请求过快
-			time.Sleep(time.Duration(conf.Performance.RequestInterval) * time.Millisecond)
-		}
-	}
-
-	// 未检测到SQL注入
-	vulnResult.Result = "false"
-	vulnResult.Reason = "未发现SQL注入漏洞"
-
-	utils.Info("[SQL注入检测] 未发现SQL注入漏洞: %s", r.Request.URL.String())
-	return vulnResult, nil
 }
 

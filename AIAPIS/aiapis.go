@@ -147,7 +147,7 @@ func AIScan(model, aiurl, apikey, reqA, respA, respB, statusB string) (string, e
 			},
 		},
 		Temperature: 0.7,
-		MaxTokens:   500,
+		MaxTokens:   1000,
 	}
 
 	// 设置重试参数
@@ -214,7 +214,7 @@ func GetModelNameByAIType(aiType string) string {
 	case "kimi":
 		return "moonshot-v1-8k"
 	case "deepseek":
-		return "deepseek-chat"
+		return "deepseek-r1"
 	case "qianwen":
 		return "qwen-plus"
 	case "hunyuan":

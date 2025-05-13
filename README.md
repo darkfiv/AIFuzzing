@@ -312,6 +312,34 @@ Options:
 - 添加公共接口模糊过滤规则excludeKeywords，路径包含关键字的请求均过滤【降误报，按个人需求开启】
 - 优化内置AI prompt提示词，提高AI越权场景识别精准度
 
+### v1.0.3 (2025-04-24)
+#### **AI：**
+- 需要使用的 AI 模型，可选择内置模型，包括：
+  - **deepseek**
+  - **kimi**
+  - **qianwen**
+  - **hunyuan**
+  - **glm**
+  - **gpt**
+- 如果需要自定义模型，请填写为 **other**（注意：需使用小写）。
+
+---
+
+#### **AIApi & AIModel：**
+<img width="496" alt="image" src="https://github.com/user-attachments/assets/6343980e-b3e3-4421-badd-174d68831847" />
+
+- 当使用自定义模型时，需要配置该模型的 API & AI model名称。
+
+--- 
+
+#### **apikeys：**
+<img width="496" alt="image" src="https://github.com/user-attachments/assets/a3ad291a-28a9-40e0-ba7d-2f20413ecbda" />
+
+- 如果选择自定义 AI（即AI配置项填写为 **other**），在apikeys配置中配置other所需的 API Key 即可。
+
+
+
+
 
 ## 免责声明
 

@@ -291,56 +291,6 @@ Options:
 
 - [中文教程](https://github.com/darkfiv/AIFuzzing/blob/main/AIFuzzing%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E4%B9%A6.pdf)
 
-## 更新日志
-
-### v1.0.0 (2025-04-20)
-- 首次发布
-- 支持未授权访问检测
-- 支持越权漏洞检测
-- 支持敏感数据识别
-- 支持AI辅助分析
-- 支持Web界面查看结果
-- url扫描去重，防止对同一个目标多次扫描
-
-### v1.0.1 (2025-04-22)
-- 结果展示界面添加搜索框，支持url模糊搜索
-- 添加置信度打分细则，方便用户调试
-- 支持json/csv/xlsx结果导出，默认导出为.json格式
-
-### v1.0.2 (2025-04-24)
-- 优化内置越权漏洞扫描逻辑
-- 添加公共接口模糊过滤规则excludeKeywords，路径包含关键字的请求均过滤【降误报，按个人需求开启】
-- 优化内置AI prompt提示词，提高AI越权场景识别精准度
-
-### v1.0.3 (2025-05-12)
-- 支持用户自定义需要的AI模型，通过config.json配置即可
-#### **AI：**
-- 需要使用的 AI 模型，可选择内置模型，包括：
-  - **deepseek**
-  - **kimi**
-  - **qianwen**
-  - **hunyuan**
-  - **glm**
-  - **gpt**
-- 如果需要自定义模型，请填写为 **other**（注意：需使用小写）。
-
----
-
-#### **AIApi & AIModel：**
-<img width="496" alt="image" src="https://github.com/user-attachments/assets/6343980e-b3e3-4421-badd-174d68831847" />
-
-- 当使用自定义模型时，需要配置该模型的 API & AI model名称。
-
---- 
-
-#### **apikeys：**
-<img width="496" alt="image" src="https://github.com/user-attachments/assets/a3ad291a-28a9-40e0-ba7d-2f20413ecbda" />
-
-- 如果选择自定义 AI（即AI配置项填写为 **other**），在apikeys配置中配置other所需的 API Key 即可。
-
-
-
-
 
 ## 免责声明
 

@@ -9,8 +9,8 @@
     <a href="#核心功能">功能</a> •
     <a href="#安装指南">安装</a> •
     <a href="#快速开始">快速开始</a> •
-    <a href="#配置详解">配置</a> •
-    <a href="#web-界面使用">使用</a>
+    <a href="#配置说明">配置</a> •
+    <a href="#入门使用教程">入门使用教程</a>
   </p>
 </div>
 
@@ -78,6 +78,11 @@ AIFuzzing 是一款基于代理的被动式 Web 安全扫描工具，专注于�
 - macOS: `AIFuzzing_macos_arm64.zip` (Apple Silicon) / `AIFuzzing_macos_amd64.zip` (Intel)
 - Linux: `AIFuzzing_linux_amd64.zip`
 
+下载后解压，包含以下文件：
+- 可执行文件 (`AIFuzzing` 或 `AIFuzzing.exe`)
+- 配置文件 (`config.json`)
+- Web界面文件 (`index.html`)
+
 ## 快速开始
 
 1. **启动代理服务**
@@ -92,6 +97,9 @@ AIFuzzing.exe
 2. **配置浏览器代理**
 - 设置代理地址为 `127.0.0.1:9080`
 - 安装 HTTPS 证书（首次使用需要）
+  - Windows: 双击证书文件安装到"受信任的根证书颁发机构"
+  - macOS: 双击证书文件并添加到钥匙串，设置为"始终信任"
+  - Linux: 将证书添加到系统证书存储
 
 3. **访问 Web 界面**
 - 浏览器访问 `http://127.0.0.1:8222`
@@ -104,37 +112,96 @@ AIFuzzing.exe
 ```json
 {
   "proxy": {
-    "port": 9080
+    "port": 9080,
+    "streamLargeBodies": 102400  // 大响应体处理阈值（字节）
   },
   "unauthorizedScan": {
     "enabled": true,
     "removeHeaders": ["Authorization", "Cookie", "Token"],
-    "similarityThreshold": 0.5
+    "similarityThreshold": 0.5,  // 响应相似度阈值
+    "excludePatterns": ["/static/", "/login", "/logout"]  // 排除的URL模式
   },
   "privilegeEscalationScan": {
     "enabled": true,
-    "similarityThreshold": 0.6
+    "similarityThreshold": 0.6,
+    "paramPatterns": ["id=\\d+", "userId=\\d+"]  // 越权参数模式
   },
-  "AI": "deepseek",
+  "AI": "deepseek",  // 默认AI模型
   "apiKeys": {
-    "deepseek": "sk-xxx"
+    "deepseek": "sk-xxx",
+    "gpt": "sk-xxx",
+    "glm": "sk-xxx"
   }
 }
 ```
+
+### 配置项说明
+
+1. **代理配置**
+   - `port`: 代理服务器端口
+   - `streamLargeBodies`: 大响应体处理阈值
+
+2. **未授权扫描配置**
+   - `enabled`: 是否启用未授权扫描
+   - `removeHeaders`: 要移除的认证头
+   - `similarityThreshold`: 响应相似度阈值
+   - `excludePatterns`: 排除的URL模式
+
+3. **越权扫描配置**
+   - `enabled`: 是否启用越权扫描
+   - `similarityThreshold`: 响应相似度阈值
+   - `paramPatterns`: 越权参数模式
+
+4. **AI配置**
+   - `AI`: 默认使用的AI模型
+   - `apiKeys`: 各AI模型的API密钥
+
+## 使用技巧
+
+1. **最佳实践**
+   - 先使用默认配置进行测试
+   - 根据目标应用特点调整相似度阈值
+   - 适当添加排除规则减少误报
+   - 对于复杂场景启用AI分析
+
+2. **性能优化**
+   - 调整`streamLargeBodies`值处理大响应
+   - 合理设置排除规则减少无效扫描
+   - 根据需求选择是否启用AI分析
+
+3. **结果分析**
+   - 关注高置信度的漏洞
+   - 结合响应内容分析漏洞真实性
+   - 使用Web界面筛选和导出结果
 
 ## 常见问题
 
 1. **无法截获 HTTPS 请求**
    - 确认已正确安装并信任 HTTPS 证书
+   - 检查浏览器代理设置
+   - 重启浏览器和工具
 
 2. **误报太多**
    - 调整置信度阈值
    - 优化敏感数据识别规则
    - 添加排除规则
+   - 使用AI分析减少误报
 
 3. **检测不到敏感数据**
    - 检查敏感数据模式配置
    - 优化正则表达式
+   - 确认响应编码正确
+
+4. **性能问题**
+   - 调整大响应处理阈值
+   - 减少并发扫描数量
+   - 优化排除规则
+
+## 入门使用教程
+
+我们提供了详细的入门使用教程，帮助您快速上手 AIFuzzing：
+
+- [中文教程](https://github.com/darkfiv/AIFuzzing/blob/main/AIFuzzing%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E4%B9%A6.pdf)
 
 ## 免责声明
 

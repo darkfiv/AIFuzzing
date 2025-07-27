@@ -99,6 +99,7 @@ graph TD
 - 可执行文件 (`AIFuzzing` 或 `AIFuzzing.exe`)
 - 配置文件 (`config.json`)
 - Web界面文件 (`index.html`)
+- 白名单配置文件 (`whitelist.txt`)
 
 ## 🚀 快速开始
 

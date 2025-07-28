@@ -234,7 +234,6 @@ AIFuzzing.exe
 
 - 🐛 [报告Bug](https://github.com/darkfiv/AIFuzzing/issues/new?template=bug_report.md)
 - 💡 [功能建议](https://github.com/darkfiv/AIFuzzing/issues/new?template=feature_request.md)
-- 📧 技术交流：通过Issue或邮件联系
 
 ## 📄 免责声明
 

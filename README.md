@@ -235,6 +235,9 @@ AIFuzzing.exe
 - 🐛 [报告Bug](https://github.com/darkfiv/AIFuzzing/issues/new?template=bug_report.md)
 - 💡 [功能建议](https://github.com/darkfiv/AIFuzzing/issues/new?template=feature_request.md)
 
+### 有什么问题可以进群问
+<img width="1044" height="1560" alt="image" src="https://github.com/user-attachments/assets/d5e194fd-cd34-4b8d-a416-ddc684f764d9" />
+
 ## 📄 免责声明
 
 AIFuzzing 仅用于合法的安全测试和研究目的。用户必须获得测试目标系统的授权，且需遵守当地法律法规。开发者对因滥用本工具导致的任何损失不承担责任。

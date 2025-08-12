@@ -83,7 +83,6 @@ graph TD
 
 ### 系统要求
 - 支持 Windows、macOS 和 Linux
-- 建议至少 4GB RAM
 
 ### 下载安装
 从 [Releases](https://github.com/darkfiv/AIFuzzing/releases) 下载对应平台的二进制文件：

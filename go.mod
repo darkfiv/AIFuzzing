@@ -4,13 +4,14 @@ go 1.22
 
 require (
 	github.com/gin-gonic/gin v1.10.0
+	github.com/klauspost/pgzip v1.2.6
 	github.com/lqqyt2423/go-mitmproxy v1.8.5
+	github.com/xuri/excelize/v2 v2.9.0
 	golang.org/x/text v0.19.0
 )
 
 require (
-	github.com/andybalholm/brotli v1.0.4 // indirect
-	github.com/axgle/mahonia v0.0.0-20180208002826-3358181d7394 // indirect
+	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
@@ -39,7 +40,6 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/xuri/efp v0.0.0-20240408161823-9ad904a10d6d // indirect
-	github.com/xuri/excelize/v2 v2.9.0 // indirect
 	github.com/xuri/nfp v0.0.0-20240318013403-ab9948c2c4a7 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/arch v0.8.0 // indirect

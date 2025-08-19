@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AIFuzzing - 高级安全扫描</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <link href="/static/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/prism-tomorrow.min.css" rel="stylesheet">
     <style>
         :root {
             --primary-color: #4a90e2;
@@ -200,10 +200,31 @@
         }
 
         .custom-table .url-cell {
-            max-width: 250px;
+            max-width: 300px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            cursor: pointer;
+        }
+
+        .custom-table .url-cell:hover {
+            position: relative;
+        }
+
+        .custom-table .url-cell:hover::after {
+            content: attr(title);
+            position: absolute;
+            left: 0;
+            top: 100%;
+            z-index: 1000;
+            background: #fff;
+            border: 1px solid #ddd;
+            padding: 5px;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            white-space: normal;
+            word-break: break-all;
+            max-width: 500px;
         }
 
         .custom-table tbody tr {
@@ -730,12 +751,40 @@
         .stat-card:nth-child(2) { --i: 1; }
         .stat-card:nth-child(3) { --i: 2; }
         .stat-card:nth-child(4) { --i: 3; }
+
+        /* 添加URL单元格的样式 */
+        .url-cell {
+            cursor: pointer;
+            position: relative;
+        }
+        
+        .url-cell:hover {
+            background-color: rgba(0, 123, 255, 0.1);
+        }
+        
+        .url-cell:hover::after {
+            content: '点击复制';
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+        }
+
+        .url-cell.copied::after {
+            content: '已复制！';
+        }
     </style>
 </head>
 <body>
     <div class="app-container mt-4">
         <div class="hero-section">
-            <h1 class="hero-title">AIFuzzing <span style="font-size: 1.5rem;">v1.0.0</span></h1>
+            <h1 class="hero-title">AIFuzzing <span style="font-size: 1.5rem;">v1.0.6</span></h1>
             <p class="hero-subtitle">高级API安全扫描工具，智能检测未授权访问和越权漏洞</p>
             <button id="refreshBtn" class="btn btn-light px-4 py-2">
                 <i class="bi bi-arrow-clockwise"></i> 刷新数据
@@ -761,29 +810,57 @@
             </div>
         </div>
 
-        <div class="table-container">
-            <div class="table-header">
-                <h2 class="section-title">漏洞扫描结果</h2>
-                <div class="filter-controls">
-                    <div class="input-group me-2" style="width: 250px;">
-                        <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="搜索URL...">
-                        <button class="btn btn-outline-secondary btn-sm" type="button" id="clearSearchBtn">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-x" viewBox="0 0 16 16">
-                                <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
-                            </svg>
+        <!-- 筛选控件 -->
+        <div class="filters mb-3">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="searchInput" placeholder="搜索URL...">
+                        <button class="btn btn-outline-secondary" type="button" id="clearSearchBtn">
+                            <i class="bi bi-x-lg"></i>
                         </button>
                     </div>
-                    <select id="filterVulnType" class="form-select form-select-sm me-2" style="width: 150px;">
-                        <option value="">所有漏洞类型</option>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select" id="filterVulnType">
+                        <option value="">全部漏洞类型</option>
                         <option value="未授权访问">未授权访问</option>
                         <option value="越权访问">越权访问</option>
                     </select>
-                    <select id="filterResult" class="form-select form-select-sm me-2" style="width: 150px;">
-                        <option value="">所有检测结果</option>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select" id="filterResult">
+                        <option value="">全部结果</option>
                         <option value="true">存在漏洞</option>
                         <option value="unknown">需人工确认</option>
                         <option value="false">安全请求</option>
                     </select>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select" id="filterMethod">
+                        <option value="">全部请求方法</option>
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="DELETE">DELETE</option>
+                        <option value="PATCH">PATCH</option>
+                    </select>
+                </div>
+                <!-- 添加误报筛选下拉框 -->
+                <div class="col-auto">
+                    <select class="form-select" id="filterFalsePositive">
+                        <option value="">全部结果</option>
+                        <option value="true">误报</option>
+                        <option value="false">非误报</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <div class="table-header">
+                <h2 class="section-title">漏洞扫描结果</h2>
+                <div class="filter-controls">
                     <div class="download-section mb-2">
                         <div class="dropdown">
                             <button class="btn btn-primary-custom dropdown-toggle" type="button" id="exportBtn" data-bs-toggle="dropdown" aria-expanded="false">
@@ -831,10 +908,10 @@
         <p class="footer-text">© 2025 AIFuzzing - 高级API安全扫描工具 | 面向未来的安全检测</p>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-http.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
+    <script src="/static/bootstrap.bundle.min.js"></script>
+    <script src="/static/prism.min.js"></script>
+    <script src="/static/prism-http.min.js"></script>
+    <script src="/static/prism-json.min.js"></script>
     <script>
         // 全局变量存储所有结果和分页信息
         let allResults = [];
@@ -860,6 +937,7 @@
             // 为筛选控件添加事件处理
             document.getElementById('filterVulnType').addEventListener('change', applyFilters);
             document.getElementById('filterResult').addEventListener('change', applyFilters);
+            document.getElementById('filterMethod').addEventListener('change', applyFilters);
             document.getElementById('searchInput').addEventListener('input', applyFilters);
             document.getElementById('clearSearchBtn').addEventListener('click', function() {
                 document.getElementById('searchInput').value = '';
@@ -896,7 +974,9 @@
                     renderResults(filterResults(data,
                         document.getElementById('filterVulnType').value,
                         document.getElementById('filterResult').value,
-                        document.getElementById('searchInput').value));
+                        document.getElementById('searchInput').value,
+                        document.getElementById('filterMethod').value,
+                        document.getElementById('filterFalsePositive').value));
                 })
                 .catch(error => {
                     console.error('获取数据失败:', error);
@@ -932,7 +1012,7 @@
         }
 
         // 筛选结果函数，增加URL搜索功能
-        function filterResults(data, vulnType, resultType, searchTerm) {
+        function filterResults(data, vulnType, resultType, searchTerm, methodType, falsePositiveType) {
             let filtered = data;
 
             // 按URL搜索筛选
@@ -948,11 +1028,8 @@
             if (vulnType) {
                 filtered = filtered.filter(item => {
                     if (!item.vulnType) return false;
-
-                    // 标准化漏洞类型值，使其可以正确匹配
                     const normalizedVulnType = normalizeVulnType(item.vulnType);
                     const normalizedFilter = normalizeVulnType(vulnType);
-
                     return normalizedVulnType === normalizedFilter;
                 });
             }
@@ -960,6 +1037,23 @@
             // 按结果类型筛选
             if (resultType) {
                 filtered = filtered.filter(item => item.result === resultType);
+            }
+
+            // 按请求方法筛选
+            if (methodType) {
+                filtered = filtered.filter(item => item.method === methodType);
+            }
+
+            // 按误报状态筛选
+            if (falsePositiveType) {
+                filtered = filtered.filter(item => {
+                    if (falsePositiveType === 'true') {
+                        return item.isFalsePositive === true;
+                    } else if (falsePositiveType === 'false') {
+                        return item.isFalsePositive === false;
+                    }
+                    return true;
+                });
             }
 
             // 计算总页数
@@ -998,18 +1092,15 @@
             return vulnType;
         }
 
-        // 应用所有筛选条件
+        // 应用筛选器
         function applyFilters() {
             const vulnType = document.getElementById('filterVulnType').value;
             const resultType = document.getElementById('filterResult').value;
             const searchTerm = document.getElementById('searchInput').value;
-            console.log('Applying filters:', { vulnType, resultType, searchTerm, currentPage, pageSize });
+            const methodType = document.getElementById('filterMethod').value;
+            const falsePositiveType = document.getElementById('filterFalsePositive').value;
 
-            // 获取筛选后的数据
-            const filteredData = filterResults(allResults, vulnType, resultType, searchTerm);
-            console.log('Filtered data:', filteredData.length, '条结果');
-
-            // 渲染结果表格
+            const filteredData = filterResults(allResults, vulnType, resultType, searchTerm, methodType, falsePositiveType);
             renderResults(filteredData);
         }
 
@@ -1029,6 +1120,8 @@
             const vulnType = document.getElementById('filterVulnType').value;
             const resultType = document.getElementById('filterResult').value;
             const searchTerm = document.getElementById('searchInput').value;
+            const methodType = document.getElementById('filterMethod').value;
+            const falsePositiveType = document.getElementById('filterFalsePositive').value;
 
             // 获取筛选后的完整数据集（用于计算总数）
             const totalFilteredData = allResults.filter(item => {
@@ -1045,6 +1138,11 @@
 
                 // 结果类型筛选
                 if (resultType && item.result !== resultType) {
+                    return false;
+                }
+
+                // 请求方法筛选
+                if (methodType && item.method !== methodType) {
                     return false;
                 }
 
@@ -1099,14 +1197,10 @@
                 return dateB - dateA;
             });
 
-            // 为每个结果项分配唯一的索引值作为ID
+            // 为每个结果项分配显示序号
             sortedData.forEach((item, index) => {
-                // 使用分页后的索引
+                // 使用分页后的索引作为显示序号
                 const displayIndex = startIndex + index;
-                // 确保每个项都有ID，没有则使用索引
-                if (!item.id) {
-                    item.id = "result-" + displayIndex;
-                }
 
                 const urlMaxLength = 50;
                 const url = item.url ? item.url : '';
@@ -1135,7 +1229,7 @@
                 }
 
                 tableHTML += `
-                    <tr data-id="${item.id}" data-url="${url}" class="result-row">
+                    <tr data-url="${url}" class="result-row">
                         <td>${displayIndex}</td>
                         <td title="${url}" class="url-cell">${displayUrl}</td>
                         <td>${item.method || ''}</td>
@@ -1146,6 +1240,9 @@
                             <div class="d-flex align-items-center justify-content-between">
                                 <span class="reason-text text-truncate me-2">${item.reason || ''}</span>
                                 <button class="btn btn-sm btn-primary view-details-btn"
+                                    data-method="${item.method}"
+                                    data-url="${item.url}"
+                                    data-vulntype="${item.vulnType}"
                                     data-index="${index}">
                                     查看详情
                                 </button>
@@ -1202,6 +1299,9 @@
                     showDetails(sortedData[index]);
                 });
             });
+
+            // 设置URL复制功能
+            setupUrlCopyFeature();
         }
 
         // 列宽调整功能
@@ -1320,6 +1420,20 @@
                                         <tr>
                                             <th>原因</th>
                                             <td>${item.reason || '未知'}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>误报状态</th>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <span class="me-2" id="falsePositiveStatus">
+                                                        ${item.isFalsePositive ? '已标记为误报' : '未标记为误报'}
+                                                    </span>
+                                                    <button class="btn btn-sm ${item.isFalsePositive ? 'btn-warning' : 'btn-secondary'}" 
+                                                            onclick="toggleFalsePositive('${item.method}', '${item.url}', '${item.vulnType}', ${!item.isFalsePositive})">
+                                                        ${item.isFalsePositive ? '取消误报标记' : '标记为误报'}
+                                                    </button>
+                                                </div>
+                                            </td>
                                         </tr>
                                     </table>
                             </div>
@@ -1581,11 +1695,11 @@
             // 获取原始请求或未授权请求内容
             const requestContent = isUnauthorized ? item.requestB : item.requestA;
 
-            // 如果原始请求内容存在且包含HTTP方法和路径，直接使用
+            // 如果原始请求内容存在且包含HTTP方法和路径，直接使用（转义HTML字符）
             if (requestContent && (requestContent.startsWith('GET ') || requestContent.startsWith('POST ') ||
                 requestContent.startsWith('PUT ') || requestContent.startsWith('DELETE '))) {
-                // 原始请求内容已经包含完整的请求行和请求头，直接返回
-                return requestContent;
+                // 原始请求内容已经包含完整的请求行和请求头，转义后返回
+                return escapeHtml(requestContent);
             }
 
             // 若原始请求内容不存在或不完整，则手动构建
@@ -1657,30 +1771,45 @@
                 }
             }
 
-            return result.trim();
+            return escapeHtml(result.trim());
+        }
+
+        // 转义HTML字符，防止HTML代码被渲染
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
         }
 
         // 格式化JSON字符串显示
         function formatJSON(jsonStr) {
             if (!jsonStr) return '';
+            
+            // 首先转义HTML字符，确保HTML代码不会被渲染
+            const escapedStr = escapeHtml(jsonStr.toString());
+            
             try {
                 // 如果是字符串，尝试解析为JSON
                 if (typeof jsonStr === 'string') {
                     // 检查是否是HTTP请求格式
                     if (jsonStr.includes('HTTP/') || jsonStr.includes('POST ') || jsonStr.includes('GET ')) {
-                        return jsonStr;
+                        return escapedStr;
                     }
                     const obj = JSON.parse(jsonStr);
-                    return JSON.stringify(obj, null, 2);
+                    return escapeHtml(JSON.stringify(obj, null, 2));
                 }
                 // 如果已经是对象，直接格式化
                 else if (typeof jsonStr === 'object') {
-                    return JSON.stringify(jsonStr, null, 2);
+                    return escapeHtml(JSON.stringify(jsonStr, null, 2));
                 }
-                return jsonStr;
+                return escapedStr;
             } catch (e) {
-                // 如果解析失败，直接返回原始字符串
-                return jsonStr;
+                // 如果解析失败，直接返回转义后的原始字符串
+                return escapedStr;
             }
         }
 
@@ -1844,6 +1973,267 @@
                     }
                 });
             }
+        }
+
+        // 添加URL复制功能
+        function setupUrlCopyFeature() {
+            document.querySelectorAll('.url-cell').forEach(cell => {
+                cell.addEventListener('click', async function() {
+                    const url = this.getAttribute('data-url');
+                    try {
+                        await navigator.clipboard.writeText(url);
+                        this.classList.add('copied');
+                        setTimeout(() => {
+                            this.classList.remove('copied');
+                        }, 1500);
+                    } catch (err) {
+                        console.error('复制失败:', err);
+                        // 使用传统方法复制
+                        const textArea = document.createElement('textarea');
+                        textArea.value = url;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        try {
+                            document.execCommand('copy');
+                            this.classList.add('copied');
+                            setTimeout(() => {
+                                this.classList.remove('copied');
+                            }, 1500);
+                        } catch (err) {
+                            console.error('复制失败:', err);
+                        }
+                        document.body.removeChild(textArea);
+                    }
+                });
+            });
+        }
+
+        // 通过字段更新本地数据中的误报状态
+        function updateLocalFalsePositiveStatusByFields(method, url, vulnType, isFalsePositive) {
+            const normalizedTargetVulnType = normalizeVulnType(vulnType);
+            
+            // 更新所有相同URL、方法和漏洞类型的结果
+            let updatedCount = 0;
+            allResults.forEach((result, i) => {
+                const normalizedVulnType = normalizeVulnType(result.vulnType);
+                if (result.method === method && 
+                    result.url === url && 
+                    normalizedVulnType === normalizedTargetVulnType) {
+                    result.isFalsePositive = isFalsePositive;
+                    updatedCount++;
+                }
+            });
+            
+            console.log(`[本地更新] 已更新 ${updatedCount} 条记录的误报状态为: ${isFalsePositive} (URL: ${url})`);
+            
+            // 更新统计数据
+            updateStats(allResults);
+        }
+
+        // 更新本地数据中的误报状态（保留旧函数以兼容）
+        function updateLocalFalsePositiveStatus(id, isFalsePositive) {
+            // 提取索引
+            const idStr = id.replace('result-', '');
+            const index = parseInt(idStr);
+            
+            // 更新本地数据中的指定项
+            if (index >= 0 && index < allResults.length) {
+                const targetResult = allResults[index];
+                updateLocalFalsePositiveStatusByFields(targetResult.method, targetResult.url, targetResult.vulnType, isFalsePositive);
+            }
+        }
+
+        // 修改误报标记函数
+        async function toggleFalsePositive(method, url, vulnType, isFalsePositive) {
+            try {
+                const response = await fetch('/updateFalsePositive', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        method: method,
+                        url: url,
+                        vulnType: vulnType,
+                        isFalsePositive: isFalsePositive
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || '更新误报状态失败');
+                }
+
+                const responseData = await response.json();
+                console.log('[误报更新] 服务器响应:', responseData);
+                
+                // 只有在成功时才更新UI
+                const statusElement = document.getElementById('falsePositiveStatus');
+                const button = statusElement.nextElementSibling;
+                
+                if (isFalsePositive) {
+                    statusElement.textContent = '已标记为误报';
+                    button.textContent = '取消误报标记';
+                    button.classList.remove('btn-secondary');
+                    button.classList.add('btn-warning');
+                } else {
+                    statusElement.textContent = '未标记为误报';
+                    button.textContent = '标记为误报';
+                    button.classList.remove('btn-warning');
+                    button.classList.add('btn-secondary');
+                }
+                
+                // 更新按钮的onclick事件
+                button.setAttribute('onclick', `toggleFalsePositive('${method}', '${url}', '${vulnType}', ${!isFalsePositive})`);
+
+                // 更新本地数据中对应的误报状态，避免重新获取数据
+                updateLocalFalsePositiveStatusByFields(method, url, vulnType, isFalsePositive);
+                
+                // 重新渲染当前页面
+                renderResults(filterResults(allResults,
+                    document.getElementById('filterVulnType').value,
+                    document.getElementById('filterResult').value,
+                    document.getElementById('searchInput').value,
+                    document.getElementById('filterMethod').value,
+                    document.getElementById('filterFalsePositive').value
+                ));
+
+            } catch (error) {
+                console.error('更新误报状态时出错:', error);
+                alert(error.message || '更新误报状态失败，请重试');
+                
+                // 发生错误时，恢复UI状态
+                const statusElement = document.getElementById('falsePositiveStatus');
+                const button = statusElement.nextElementSibling;
+                
+                if (!isFalsePositive) {
+                    statusElement.textContent = '已标记为误报';
+                    button.textContent = '取消误报标记';
+                    button.classList.remove('btn-secondary');
+                    button.classList.add('btn-warning');
+                } else {
+                    statusElement.textContent = '未标记为误报';
+                    button.textContent = '标记为误报';
+                    button.classList.remove('btn-warning');
+                    button.classList.add('btn-secondary');
+                }
+                
+                // 恢复按钮的onclick事件
+                button.setAttribute('onclick', `toggleFalsePositive('${method}', '${url}', '${vulnType}', ${!isFalsePositive})`);
+            }
+        }
+
+        // 添加误报筛选事件监听器
+        document.getElementById('filterFalsePositive').addEventListener('change', function() {
+            currentPage = 1;  // 重置到第一页
+            renderResults(allResults);
+        });
+
+        // 修改结果表格的显示，添加误报标记的视觉提示
+        function updateResultRow(item) {
+            // ... 原有的表格行HTML ...
+            if (item.isFalsePositive) {
+                return `
+                    <tr data-url="${url}" class="result-row table-secondary">
+                        <td>${displayIndex}</td>
+                        <td title="${url}" class="url-cell">
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-warning me-2">误报</span>
+                                ${displayUrl}
+                            </div>
+                        </td>
+                        <td>${item.method || ''}</td>
+                        <td>${vulnTypeBadge}</td>
+                        <td class="${statusClass}">${statusText}</td>
+                        <td>${item.scanTime ? new Date(item.scanTime).toLocaleString() : (item.timestamp ? new Date(item.timestamp).toLocaleString() : '未知')}</td>
+                        <td>
+                            <div class="d-flex align-items-center justify-content-between">
+                                <span class="reason-text text-truncate me-2">${item.reason || ''}</span>
+                                <button class="btn btn-sm btn-primary view-details-btn"
+                                    data-method="${item.method}"
+                                    data-url="${item.url}"
+                                    data-vulntype="${item.vulnType}"
+                                    data-index="${index}">
+                                    查看详情
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            } else {
+                return `
+                    <tr data-url="${url}" class="result-row">
+                        <td>${displayIndex}</td>
+                        <td title="${url}" class="url-cell">${displayUrl}</td>
+                        <td>${item.method || ''}</td>
+                        <td>${vulnTypeBadge}</td>
+                        <td class="${statusClass}">${statusText}</td>
+                        <td>${item.scanTime ? new Date(item.scanTime).toLocaleString() : (item.timestamp ? new Date(item.timestamp).toLocaleString() : '未知')}</td>
+                        <td>
+                            <div class="d-flex align-items-center justify-content-between">
+                                <span class="reason-text text-truncate me-2">${item.reason || ''}</span>
+                                <button class="btn btn-sm btn-primary view-details-btn"
+                                    data-method="${item.method}"
+                                    data-url="${item.url}"
+                                    data-vulntype="${item.vulnType}"
+                                    data-index="${index}">
+                                    查看详情
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // 修改表格渲染逻辑
+        function renderTable(data, startIndex = 0) {
+            let tableHTML = `
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>URL</th>
+                            <th>方法</th>
+                            <th>漏洞类型</th>
+                            <th>状态</th>
+                            <th>扫描时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            const sortedData = [...data].sort((a, b) => {
+                // 优先使用scanTime字段，如果不存在则尝试使用timestamp
+                const dateA = a.scanTime ? new Date(a.scanTime) : (a.timestamp ? new Date(a.timestamp) : new Date(0));
+                const dateB = b.scanTime ? new Date(b.scanTime) : (b.timestamp ? new Date(b.timestamp) : new Date(0));
+                return dateB - dateA;
+            });
+
+            // 为每个结果项生成表格行（renderTable函数目前未使用，保留用于兼容）
+            sortedData.forEach((item, index) => {
+                // 使用分页后的索引
+                const displayIndex = startIndex + index;
+                
+                // 这里应该直接生成表格行，但该函数当前未被调用
+                // tableHTML += generateTableRow(item, displayIndex, index);
+            });
+
+            tableHTML += `
+                </tbody>
+            </table>
+            `;
+
+            document.getElementById('resultsTable').innerHTML = tableHTML;
+            
+            // 重新绑定查看详情按钮事件
+            document.querySelectorAll('.view-details-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const index = button.getAttribute('data-index');
+                    showDetails(sortedData[index]);
+                });
+            });
         }
     </script>
 </body>

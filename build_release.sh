@@ -13,20 +13,20 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}==== AIFuzzing 打包脚本开始执行 ====${NC}"
 
 # 设置变量
-VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.2")
+VERSION="v1.0.5"  # 固定版本号
 BUILD_DIR="build"
 RELEASE_DIR="release"
 BINARY_NAME="AIFuzzing"
-REQUIRED_FILES=("index.html" "config.json" "whitelist.txt")
+REQUIRED_FILES=("index.html" "config.json" "whitelist.txt" "static")
 
 # 检查必要的文件是否存在
 echo -e "${YELLOW}检查必要文件...${NC}"
 for file in "${REQUIRED_FILES[@]}"; do
-  if [ ! -f "$file" ]; then
-    echo -e "${RED}错误: 未找到必要文件 $file${NC}"
+  if [ ! -f "$file" ] && [ ! -d "$file" ]; then
+    echo -e "${RED}错误: 未找到必要文件或目录 $file${NC}"
     exit 1
   else
-    echo -e "${GREEN}✓ 找到文件: $file${NC}"
+    echo -e "${GREEN}✓ 找到文件或目录: $file${NC}"
   fi
 done
 
@@ -54,7 +54,7 @@ fi
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 if [ "$OS" != "darwin" ]; then
   echo -e "${YELLOW}警告: 当前系统不是macOS (检测到: $OS)${NC}"
-else 
+else
   echo -e "${GREEN}检测到macOS系统${NC}"
 fi
 
@@ -186,4 +186,4 @@ echo -e "${YELLOW}gh release create ${VERSION} --title \"AIFuzzing ${VERSION}\" 
 
 # 显示发布文件
 echo -e "${YELLOW}发布文件列表:${NC}"
-ls -lh "$RELEASE_DIR" 
+ls -lh "$RELEASE_DIR"

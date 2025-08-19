@@ -1,5 +1,8 @@
 {
   "AI": "deepseek",
+  "AIApi": "https://oneai.deepseek.com/v1/chat/completions",
+  "AIModel": "deepseek-chat",
+  "enableAI": true,
   "requestFilters": {
     "enabled": false,
     "paramPatterns": [
@@ -34,13 +37,11 @@
     "removeHeaders": [
       "Authorization",
       "Cookie",
+      "ebauthorizer",
       "Token",
       "Jwt",
-      "X-Auth-Token",
-      "X-Csrf-Token",
-      "X-Api-Key"
+      "Usertoken"
     ],
-    "similarityThreshold": 0.5,
     "excludePatterns": [
       "/static/",
       "/login",
@@ -57,6 +58,10 @@
       "/download/",
       "/upload",
       "/download"
+    ],
+    "excludeKeywords": [
+      "log",
+      "error"
     ],
     "sensitiveDataPatterns": {
       "enabled": true,
@@ -79,19 +84,19 @@
       ]
     },
     "useConfidenceScore": true,
-    "highConfidenceScore": 60,
-    "mediumConfidenceScore": 45,
-    "lowConfidenceScore": 35,
+    "highConfidenceScore": 70,
+    "mediumConfidenceScore": 40,
+    "lowConfidenceScore": 20,
     "confidenceRules": [
       {
         "name": "contains_sensitive_data",
         "description": "响应中包含敏感数据（如手机号、身份证等）",
-        "weight": 65
+        "weight": 60
       },
       {
         "name": "successful_status_code",
         "description": "响应状态码为2xx",
-        "weight": 10
+        "weight": 5
       },
       {
         "name": "json_response",
@@ -101,7 +106,7 @@
       {
         "name": "similar_content_length",
         "description": "与原始响应长度相似",
-        "weight": 10
+        "weight": 20
       },
       {
         "name": "api_endpoint",
@@ -112,17 +117,15 @@
   },
   "apiKeys": {
     "kimi": "sk-xxxxxxx",
-    "deepseek": "sk-xxxxxxx",
+    "deepseek": "sk-xxx",
     "qianwen": "sk-zzzzzzz",
     "hunyuan": "sk-aaaaaaa",
     "glm": "sk-ccccccc",
-    "gpt": "sk-bbbbbbb"
+    "gpt": "sk-bbbbbbb",
+    "other": "sk-xxx"
   },
   "headers2": {
-   "Cookie":"test",
-   "Token":"xxx",
-    "User-Agent": "AIFuzzing",
-    "Custom-Header": "CustomValue"
+    "Cookie":"xxx"
   },
   "suffixes": [
     ".js",
@@ -138,7 +141,10 @@
     ".ttf",
     ".eot",
     ".map",
+    ".html",
+    ".txt",
     ".webp"
+
   ],
   "allowedRespHeaders": [
     "image/png",
@@ -183,9 +189,9 @@
   "output": {
     "enableWebUI": true,
     "webUIPort": 8222,
-    "enableReportFile": false,
+    "enableReportFile": true,
     "reportDirectory": "./reports",
-    "reportFormat": "html"
+    "reportFormat": "json"
   },
   "proxy": {
     "port": 9080,
@@ -193,11 +199,11 @@
   },
   "privilegeEscalationScan": {
     "enabled": true,
-    "similarityThreshold": 0.6,
+    "similarityThreshold": 0.90,
+    "includePatterns": [
+    ],
     "paramPatterns": [
-     "userid=",
-     "id"
-     "uid"
+
     ]
   }
 }

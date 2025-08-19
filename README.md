@@ -283,19 +283,13 @@ AIFuzzing.exe
 - 📖 [详细使用教程](https://github.com/darkfiv/AIFuzzing/blob/main/AIFuzzing%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E4%B9%A6.pdf)
 
 ## 🔄 更新日志
-
-### v1.0.6
+### v1.0.5
 - ✅ 新增误报标记与筛选功能
 - ✅ 修复HTML响应内容转义问题
 - ✅ 优化用户界面交互体验
 - ✅ 提升数据展示安全性
 
-### v1.0.5
-- 🚀 首次发布版本
-- 🔍 支持未授权访问检测
-- 🛡️ 支持越权漏洞检测
-- 🤖 集成AI智能分析
-- 📊 提供Web管理界面
+
 
 [查看完整更新日志](https://github.com/darkfiv/AIFuzzing/releases)
 

@@ -83,7 +83,6 @@ graph TD
 
 ### 系统要求
 - 支持 Windows、macOS 和 Linux
-- 建议至少 4GB RAM
 
 ### 下载安装
 从 [Releases](https://github.com/darkfiv/AIFuzzing/releases) 下载对应平台的二进制文件：
@@ -99,6 +98,7 @@ graph TD
 - 可执行文件 (`AIFuzzing` 或 `AIFuzzing.exe`)
 - 配置文件 (`config.json`)
 - Web界面文件 (`index.html`)
+- 白名单配置文件 (`whitelist.txt`)
 
 ## 🚀 快速开始
 
@@ -219,7 +219,7 @@ AIFuzzing.exe
 
 ## 🔄 更新日志
 
-### v1.0.6
+### v1.0.5
 - ✅ 新增误报标记与筛选功能
 - ✅ 修复HTML响应内容转义问题
 - ✅ 优化用户界面交互体验
@@ -233,7 +233,10 @@ AIFuzzing.exe
 
 - 🐛 [报告Bug](https://github.com/darkfiv/AIFuzzing/issues/new?template=bug_report.md)
 - 💡 [功能建议](https://github.com/darkfiv/AIFuzzing/issues/new?template=feature_request.md)
-- 📧 技术交流：通过Issue或邮件联系
+
+### 有什么问题可以进群问
+![image](https://github.com/user-attachments/assets/4e1562c0-01b3-49e3-90e5-48fe300aad6e)
+
 
 ## 📄 免责声明
 

@@ -235,7 +235,7 @@ AIFuzzing.exe
 - 💡 [功能建议](https://github.com/darkfiv/AIFuzzing/issues/new?template=feature_request.md)
 
 ### 有什么问题可以进群问
-![image](https://github.com/user-attachments/assets/d0a7695f-de16-4457-b2fb-df2289ac1f91)
+![image](https://github.com/user-attachments/assets/4e1562c0-01b3-49e3-90e5-48fe300aad6e)
 
 
 ## 📄 免责声明

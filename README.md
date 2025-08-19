@@ -165,6 +165,28 @@ GOOS=linux GOARCH=amd64 go build -o AIFuzzing_linux_amd64
 ./AIFuzzing -disableWebUI
 ```
 
+## 🛠️ 开发指南
+
+### 项目结构
+```
+AIFuzzing/
+├── main.go              # 主程序入口
+├── config/              # 配置管理
+├── scanner/             # 扫描核心逻辑
+├── utils/               # 工具函数
+├── workerpool/          # 工作池管理
+├── similarity/          # 相似度计算
+├── static/              # 静态资源文件
+├── index.html           # Web界面
+└── config.json          # 配置文件
+```
+
+### 开发环境搭建
+1. 确保已安装Go 1.18+
+2. 克隆项目并进入目录
+3. 运行 `go mod download` 安装依赖
+4. 使用 `go run main.go` 启动开发模式
+
 ## 🚀 快速开始
 
 ### 1. 启动服务
@@ -303,28 +325,6 @@ AIFuzzing.exe
 ### 技术交流群
 有什么问题可以进群问
 ![image](https://github.com/user-attachments/assets/4e1562c0-01b3-49e3-90e5-48fe300aad6e)
-
-## 🛠️ 开发指南
-
-### 项目结构
-```
-AIFuzzing/
-├── main.go              # 主程序入口
-├── config/              # 配置管理
-├── scanner/             # 扫描核心逻辑
-├── utils/               # 工具函数
-├── workerpool/          # 工作池管理
-├── similarity/          # 相似度计算
-├── static/              # 静态资源文件
-├── index.html           # Web界面
-└── config.json          # 配置文件
-```
-
-### 开发环境搭建
-1. 确保已安装Go 1.18+
-2. 克隆项目并进入目录
-3. 运行 `go mod download` 安装依赖
-4. 使用 `go run main.go` 启动开发模式
 
 
 

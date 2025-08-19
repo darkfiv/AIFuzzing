@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -41,6 +42,7 @@ type Result struct {
 	Differences   []string `json:"differences"`
 	SensitiveData []string `json:"sensitiveData,omitempty"` // 检测到的敏感数据类型
 	ScanTime      string   `json:"scanTime"`                // 添加扫描时间字段
+	IsFalsePositive bool   `json:"isFalsePositive"`        // 是否为误报
 }
 
 // 全局变量，用于存储请求日志
@@ -212,10 +214,12 @@ func index(port int) {
 
 	r := gin.Default()
 
-	// 提供前端静态文件服务
-	r.LoadHTMLFiles("index.html") // 加载前端页面
+	// 设置静态文件服务
+	r.Static("/static", "./static")
+
+	// 设置路由
 	r.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "index.html", nil)
+		c.File("index.html")
 	})
 
 	// 提供 API 接口
@@ -276,6 +280,7 @@ func index(port int) {
 				"differences":   newData.Differences,
 				"sensitiveData": newData.SensitiveData,
 				"scanTime":      newData.ScanTime,
+				"isFalsePositive": newData.IsFalsePositive,
 			}
 			reportGenerator.AddResult(resultMap)
 		}
@@ -513,6 +518,59 @@ func index(port int) {
 		c.File(filepath)
 	})
 
+	// 添加更新误报状态的API
+	r.POST("/updateFalsePositive", func(c *gin.Context) {
+		var updateData struct {
+			ID             string `json:"id"`
+			IsFalsePositive bool  `json:"isFalsePositive"`
+		}
+		if err := c.ShouldBindJSON(&updateData); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据: " + err.Error()})
+			return
+		}
+
+		// 验证ID格式
+		if !strings.HasPrefix(updateData.ID, "result-") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID格式"})
+			return
+		}
+
+		// 提取ID中的索引
+		idStr := strings.TrimPrefix(updateData.ID, "result-")
+		index, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID数字: " + err.Error()})
+			return
+		}
+
+		// 检查索引是否在有效范围内
+		if index < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID: 索引不能为负数"})
+			return
+		}
+		
+		if index >= len(Resp) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "未找到指定ID的漏洞记录"})
+			return
+		}
+
+		// 更新误报状态
+		Resp[index].IsFalsePositive = updateData.IsFalsePositive
+		
+		// 如果有报告生成器，同时更新报告中的数据
+		if reportGenerator != nil {
+			reportGenerator.UpdateFalsePositive(index, updateData.IsFalsePositive)
+		}
+
+		// 返回更新后的完整记录
+		c.JSON(http.StatusOK, gin.H{
+			"message": "误报状态更新成功",
+			"id": updateData.ID,
+			"isFalsePositive": updateData.IsFalsePositive,
+			"record": Resp[index],
+		})
+	})
+
 	// 启动服务
 	portStr := ":" + strconv.Itoa(webPort)
 	utils.Info("Web界面服务运行中，访问 http://127.0.0.1%s", portStr)
@@ -527,6 +585,11 @@ type MyAddon struct {
 	requestCount int // 添加请求计数器
 }
 
+// 新增编码修复Addon
+type EncodingFixAddon struct {
+	proxy.BaseAddon
+}
+
 // Request 方法处理 HTTP 请求
 func (a *MyAddon) Request(f *proxy.Flow) {
 	// 创建并记录请求日志
@@ -535,6 +598,15 @@ func (a *MyAddon) Request(f *proxy.Flow) {
 		Processed:  false,      // 初始化为未处理
 		ReceivedAt: time.Now(), // 记录接收时间
 	}
+
+	// 如果请求有body，保存它
+	if f.Request != nil && f.Request.Body != nil {
+		// 将body转换为字节数组并保存
+		bodyBytes := make([]byte, len(f.Request.Body))
+		copy(bodyBytes, f.Request.Body)
+		f.Request.Body = bodyBytes
+	}
+
 	// 使用 Flow ID 作为键，将请求日志存入 sync.Map
 	logs.Store(f.Id, logEntry)
 	utils.Debug("[请求跟踪] 存储请求 ID=%s, 方法=%s, URL=%s, 时间=%s",
@@ -681,7 +753,10 @@ func mitmproxy(port int, streamLargeBodies int) {
 		Addr:              portStr,
 		StreamLargeBodies: int64(streamLargeBodies),
 		Debug:             1,
+
 	}
+
+	
 
 	utils.Info("代理服务配置已完成")
 
@@ -692,7 +767,36 @@ func mitmproxy(port int, streamLargeBodies int) {
 	}
 
 	// 检查证书路径和权限
-	certPath := os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca-cert.pem")
+	var certPath string
+	switch runtime.GOOS {
+	case "windows":
+		// Windows系统下使用 %USERPROFILE% 环境变量，确保正确展开
+		userProfile := os.Getenv("USERPROFILE")
+		if userProfile == "" {
+			utils.Error("无法获取USERPROFILE环境变量")
+			// 尝试使用其他可能的位置
+			possiblePaths := []string{
+				filepath.Join("C:", "Users", os.Getenv("USERNAME"), ".mitmproxy", "mitmproxy-ca-cert.pem"),
+				filepath.Join("C:", "Users", os.Getenv("USERNAME"), "AppData", "Local", "mitmproxy", "mitmproxy-ca-cert.pem"),
+			}
+			for _, path := range possiblePaths {
+				if _, err := os.Stat(path); err == nil {
+					certPath = path
+					break
+				}
+			}
+			if certPath == "" {
+				certPath = possiblePaths[0] // 默认使用第一个路径
+			}
+		} else {
+			// 直接使用展开后的路径
+			certPath = filepath.Join(userProfile, ".mitmproxy", "mitmproxy-ca-cert.pem")
+			utils.Info("使用证书路径: %s", certPath)
+		}
+		// 确保路径使用Windows风格的分隔符
+		certPath = filepath.FromSlash(certPath)
+		
+		// 检查证书文件是否存在
 	if _, err := os.Stat(certPath); err != nil {
 		utils.Error("证书文件问题: %v", err)
 		utils.Error("请确保证书存在于路径: %s", certPath)
@@ -702,6 +806,73 @@ func mitmproxy(port int, streamLargeBodies int) {
 		// 尝试读取证书内容以验证权限
 		if certData, err := os.ReadFile(certPath); err != nil {
 			utils.Error("无法读取证书文件: %v", err)
+			} else {
+				utils.Info("证书文件可读，长度: %d bytes", len(certData))
+			}
+		}
+	case "darwin": // macOS
+		// macOS系统下检查多个可能的位置
+		possiblePaths := []string{
+			os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca-cert.pem"),
+			os.ExpandEnv("${HOME}/Library/Application Support/mitmproxy/mitmproxy-ca-cert.pem"),
+			"/usr/local/etc/mitmproxy/mitmproxy-ca-cert.pem",
+		}
+		for _, path := range possiblePaths {
+			if _, err := os.Stat(path); err == nil {
+				certPath = path
+				break
+			}
+		}
+		if certPath == "" {
+			certPath = possiblePaths[0] // 默认使用第一个路径
+		}
+	case "linux":
+		// Linux系统下检查多个可能的位置
+		possiblePaths := []string{
+			os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca-cert.pem"),
+			"/etc/mitmproxy/mitmproxy-ca-cert.pem",
+			"/usr/local/etc/mitmproxy/mitmproxy-ca-cert.pem",
+		}
+		for _, path := range possiblePaths {
+			if _, err := os.Stat(path); err == nil {
+				certPath = path
+				break
+			}
+		}
+		if certPath == "" {
+			certPath = possiblePaths[0] // 默认使用第一个路径
+		}
+	default:
+		// 其他系统使用默认路径
+		certPath = os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca-cert.pem")
+	}
+
+	if _, err := os.Stat(certPath); err != nil {
+		utils.Error("证书文件问题: %v", err)
+		utils.Error("请确保证书存在于路径: %s", certPath)
+		utils.Info("您可能需要手动创建证书，或先运行一次标准的mitmproxy来生成证书")
+		// 提供更详细的安装指导
+		switch runtime.GOOS {
+		case "darwin":
+			utils.Info("在macOS上，您可以运行以下命令安装mitmproxy：")
+			utils.Info("brew install mitmproxy")
+			utils.Info("然后运行 mitmproxy 生成证书")
+		case "linux":
+			utils.Info("在Linux上，您可以运行以下命令安装mitmproxy：")
+			utils.Info("sudo apt install mitmproxy  # Debian/Ubuntu")
+			utils.Info("sudo yum install mitmproxy  # CentOS/RHEL")
+			utils.Info("然后运行 mitmproxy 生成证书")
+		}
+	} else {
+		utils.Info("证书文件已找到: %s", certPath)
+		// 尝试读取证书内容以验证权限
+		if certData, err := os.ReadFile(certPath); err != nil {
+			utils.Error("无法读取证书文件: %v", err)
+			// 提供权限修复建议
+			if runtime.GOOS != "windows" {
+				utils.Info("请尝试运行以下命令修复权限：")
+				utils.Info("chmod 644 %s", certPath)
+			}
 		} else {
 			utils.Info("证书文件可读，长度: %d bytes", len(certData))
 		}
@@ -711,6 +882,7 @@ func mitmproxy(port int, streamLargeBodies int) {
 	p.AddAddon(&MyAddon{})             // 添加 MyAddon
 	p.AddAddon(&DebugAddon{})          // 添加调试专用Addon
 	p.AddAddon(&NetworkMonitorAddon{}) // 添加网络监视Addon
+	p.AddAddon(&EncodingFixAddon{})    // 新增编码修复处理器
 
 	utils.Info("代理服务运行中...")
 
@@ -1057,39 +1229,54 @@ func deduplicateResults(results []Result) []Result {
 		// 按结果优先级排序：true > unknown > false
 		var bestResult Result
 		bestPriority := -1 // -1表示尚未分配
+		hasFalsePositive := false // 用于跟踪是否有误报标记
 
+		// 首先检查组内是否有误报标记
 		for _, result := range group {
-			var priority int
-			switch result.Result {
-			case "true":
-				priority = 2 // 最高优先级
-			case "unknown":
-				priority = 1 // 中等优先级
-			case "false":
-				priority = 0 // 最低优先级
-			default:
-				priority = -1
-			}
-
-			// 如果当前结果优先级更高或尚未设置最佳结果
-			if priority > bestPriority || bestPriority == -1 {
+			if result.IsFalsePositive {
+				hasFalsePositive = true
 				bestResult = result
-				bestPriority = priority
-			} else if priority == bestPriority {
-				// 如果优先级相同，优先选择有敏感数据的结果
-				if len(result.SensitiveData) > len(bestResult.SensitiveData) {
+				break
+			}
+		}
+
+		// 如果没有误报标记，则按原有逻辑选择最优结果
+		if !hasFalsePositive {
+			for _, result := range group {
+				var priority int
+				switch result.Result {
+				case "true":
+					priority = 2 // 最高优先级
+				case "unknown":
+					priority = 1 // 中等优先级
+				case "false":
+					priority = 0 // 最低优先级
+				default:
+					priority = -1
+				}
+
+				// 如果当前结果优先级更高或尚未设置最佳结果
+				if priority > bestPriority || bestPriority == -1 {
 					bestResult = result
-				} else if len(result.SensitiveData) == len(bestResult.SensitiveData) && result.ScanTime > bestResult.ScanTime {
-					// 时间相同时，选择最新的结果
-					bestResult = result
+					bestPriority = priority
+				} else if priority == bestPriority {
+					// 如果优先级相同，优先选择有敏感数据的结果
+					if len(result.SensitiveData) > len(bestResult.SensitiveData) {
+						bestResult = result
+					} else if len(result.SensitiveData) == len(bestResult.SensitiveData) && result.ScanTime > bestResult.ScanTime {
+						// 时间相同时，选择最新的结果
+						bestResult = result
+					}
 				}
 			}
 		}
 
 		deduplicatedResults = append(deduplicatedResults, bestResult)
-		utils.Debug("[结果去重] URL=%s, 原始结果数=%d, 选择结果=%s",
-			bestResult.Url, len(group), bestResult.Result)
+		utils.Debug("[结果去重] URL=%s, 原始结果数=%d, 选择结果=%s, 误报标记=%v",
+			bestResult.Url, len(group), bestResult.Result, bestResult.IsFalsePositive)
 	}
 
 	return deduplicatedResults
 }
+
+

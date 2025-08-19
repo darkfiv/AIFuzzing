@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	
+
 	"strings"
 	"time"
 	"yuequanScan/config"
@@ -56,9 +56,9 @@ func CreateChatCompletion(request ChatCompletionRequest, aiurl string, aiapikey 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
-	
+
 	client := &http.Client{
-		Timeout: apiTimeout,
+		Timeout:   apiTimeout,
 		Transport: tr,
 	}
 
@@ -92,10 +92,10 @@ func CreateChatCompletion(request ChatCompletionRequest, aiurl string, aiapikey 
 	if err != nil {
 		return nil, fmt.Errorf("读取响应体失败: %v", err)
 	}
-	
+
 	// 调试输出原始响应内容
 	utils.Debug("AI API原始响应 (前500字符): %s", truncateString(string(rawBody), 500))
-	
+
 	// 检查原始响应中是否包含可能导致JSON解析失败的特殊字符
 	for i, c := range string(rawBody) {
 		if i < 200 && (c == '`' || (c < 32 && c != '\n' && c != '\r' && c != '\t')) {
@@ -105,7 +105,7 @@ func CreateChatCompletion(request ChatCompletionRequest, aiurl string, aiapikey 
 
 	// 创建新的Reader用于解析JSON
 	bodyReader := bytes.NewReader(rawBody)
-	
+
 	var response ChatCompletionResponse
 	if err := json.NewDecoder(bodyReader).Decode(&response); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %v", err)
@@ -123,12 +123,12 @@ func AIScan(model, aiurl, apikey, reqA, respA, respB, statusB string) (string, e
 	// 获取配置
 	conf := config.GetConfig()
 	maxSize := conf.Performance.MaxRequestSize
-	
+
 	// 截断过大的请求和响应内容
 	reqA = TruncateRequestBody(reqA, maxSize)
 	respA = TruncateRequestBody(respA, maxSize)
 	respB = TruncateRequestBody(respB, maxSize)
-	
+
 	// 构建更详细的提示，包含请求头和响应的对比分析
 	request := ChatCompletionRequest{
 		Model: model, // 根据实际模型名称修改
@@ -138,12 +138,12 @@ func AIScan(model, aiurl, apikey, reqA, respA, respB, statusB string) (string, e
 				Content: config.Prompt,
 			},
 			{
-				Role:    "user",
-				Content: "reqA:" + reqA + "\n" + 
-				         "responseA:" + respA + "\n" + 
-				         "responseB:" + respB + "\n" + 
-				         "statusB:" + statusB + "\n" +
-				         "请特别注意分析请求中的认证头部差异，以及响应中的权限相关内容差异",
+				Role: "user",
+				Content: "reqA:" + reqA + "\n" +
+					"responseA:" + respA + "\n" +
+					"responseB:" + respB + "\n" +
+					"statusB:" + statusB + "\n" +
+					"请特别注意分析请求中的认证头部差异，以及响应中的权限相关内容差异",
 			},
 		},
 		Temperature: 0.7,
@@ -153,43 +153,42 @@ func AIScan(model, aiurl, apikey, reqA, respA, respB, statusB string) (string, e
 	// 设置重试参数
 	maxRetries := conf.Performance.MaxRetries
 	retryInterval := time.Duration(conf.Performance.RetryInterval) * time.Second
-	
+
 	var result string
 	var lastErr error
-	
+
 	// 重试循环
 	for retry := 0; retry <= maxRetries; retry++ {
 		if retry > 0 {
 			utils.Warning("AI分析异常，第 %d 次重试，异常原因: %v", retry, lastErr)
 			time.Sleep(retryInterval)
 		}
-		
+
 		response, err := CreateChatCompletion(request, aiurl, apikey)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		if len(response.Choices) > 0 {
 			result = response.Choices[0].Message.Content
 			utils.Debug("AI分析完成，结果长度: %d", len(result))
-			
+
 			// 检查结果是否包含可能导致JSON解析失败的字符
 			for i, c := range result {
 				if i < 100 && (c == '`' || (c < 32 && c != '\n' && c != '\r' && c != '\t')) {
 					utils.Warning("AI结果包含特殊字符 位置[%d]: '%c' (ASCII: %d, 十六进制: %X)", i, c, c, c)
 				}
 			}
-			
+
 			// 尝试预处理响应，清理可能导致解析失败的字符
 			result = cleanupResponse(result)
-			
 			return result, nil
 		} else {
 			lastErr = errors.New("未收到响应")
 		}
 	}
-	
+
 	utils.Error("AI分析失败，最大重试次数已用尽，最后错误: %v", lastErr)
 	return "", lastErr
 }
@@ -204,7 +203,7 @@ func TruncateRequestBody(body string, maxSize int) string {
 	halfSize := maxSize / 2
 	prefix := body[:halfSize]
 	suffix := body[len(body)-halfSize:]
-	
+
 	return prefix + "\n... [内容过长已截断] ...\n" + suffix
 }
 
@@ -240,13 +239,13 @@ func truncateString(s string, maxLen int) string {
 func cleanupResponse(response string) string {
 	// 显示清理前的原始响应内容（调试用）
 	utils.Debug("清理前响应内容: %s", truncateString(response, 100))
-	
+
 	// 移除反引号，这些字符可能导致JSON解析失败
 	response = strings.Replace(response, "`", "", -1)
-	
+
 	// 处理多余的引号
 	response = strings.Replace(response, "\"\"", "\"", -1)
-	
+
 	// 处理以"json"开头的情况（重要修复）
 	if strings.HasPrefix(strings.TrimSpace(response), "json") {
 		jsonStartIndex := strings.Index(response, "{")
@@ -255,7 +254,7 @@ func cleanupResponse(response string) string {
 			response = response[jsonStartIndex:]
 		}
 	}
-	
+
 	// 如果响应像是ChatGPT风格的Markdown代码块
 	if strings.Contains(response, "```json") && strings.Contains(response, "```") {
 		// 提取代码块内容
@@ -268,7 +267,7 @@ func cleanupResponse(response string) string {
 			response = jsonPart
 		}
 	}
-	
+
 	// 确保响应是有效的JSON对象
 	response = strings.TrimSpace(response)
 	if !strings.HasPrefix(response, "{") {
@@ -279,9 +278,9 @@ func cleanupResponse(response string) string {
 			response = response[jsonStartIndex:]
 		}
 	}
-	
+
 	// 显示清理后的最终响应内容（调试用）
 	utils.Debug("清理后响应内容: %s", truncateString(response, 100))
-	
+
 	return response
 }

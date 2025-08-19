@@ -7,6 +7,7 @@ import (
 )
 
 // CalculateSimilarity 计算两个字符串的相似度（返回0.0-1.0之间的值）
+// 改为基于字符级别的相似度计算，使用 Levenshtein 距离算法
 func CalculateSimilarity(str1, str2 string) float64 {
 	// 如果任一字符串为空，返回0
 	if str1 == "" || str2 == "" {
@@ -18,14 +19,9 @@ func CalculateSimilarity(str1, str2 string) float64 {
 		return 1.0
 	}
 
-	// 尝试解析JSON并比较结构
-	similarity, jsonValid := compareJSON(str1, str2)
-	if jsonValid {
-		return similarity
-	}
-
-	// 如果不是有效的JSON或JSON比较得分较低，使用文本相似度算法
-	return calculateJaccardSimilarity(str1, str2)
+	// 直接使用 Levenshtein 距离进行字符级别的相似度计算
+	// 这种方法会逐字符比较，更适合检测细微差异
+	return calculateLevenshteinSimilarity(str1, str2)
 }
 
 // compareJSON 尝试将字符串解析为JSON并比较结构
@@ -163,6 +159,29 @@ func compareJSONArrays(arr1, arr2 []interface{}) float64 {
 }
 
 // calculateJaccardSimilarity 计算两个字符串的Jaccard相似度
+func calculateLengthSimilarity(str1, str2 string) float64 {
+    // 获取两个字符串的长度
+    len1 := len(str1)
+    len2 := len(str2)
+    
+    // 如果两个字符串都为空，返回1
+    if len1 == 0 && len2 == 0 {
+        return 1.0
+    }
+    
+    // 如果其中一个字符串为空，返回0
+    if len1 == 0 || len2 == 0 {
+        return 0.0
+    }
+    
+    // 计算长度差异
+    diff := math.Abs(float64(len1 - len2))
+    maxLen := math.Max(float64(len1), float64(len2))
+    
+    // 使用指数衰减函数计算相似度
+    // 当长度差异越大，相似度越低
+    return math.Exp(-diff / maxLen)
+}
 func calculateJaccardSimilarity(str1, str2 string) float64 {
 	// 将字符串拆分为单词
 	words1 := splitIntoWords(str1)
@@ -192,21 +211,35 @@ func calculateJaccardSimilarity(str1, str2 string) float64 {
 }
 
 // calculateLevenshteinSimilarity 计算基于Levenshtein距离的相似度
+// 优化版本：对字符级别的差异更加敏感，适合检测HTTP响应的细微变化
 func calculateLevenshteinSimilarity(str1, str2 string) float64 {
-	len1 := len(str1)
-	len2 := len(str2)
+	// 将字符串转换为 rune 数组，以正确处理 Unicode 字符
+	runes1 := []rune(str1)
+	runes2 := []rune(str2)
+	len1 := len(runes1)
+	len2 := len(runes2)
 	
-	// 如果其中一个字符串为空，相似度取决于另一个字符串的长度
-	if len1 == 0 {
+	// 如果其中一个字符串为空，相似度为 0
+	if len1 == 0 && len2 == 0 {
+		return 1.0
+	}
+	if len1 == 0 || len2 == 0 {
 		return 0.0
 	}
-	if len2 == 0 {
-		return 0.0
-	}
 	
-	// 如果两个字符串相同，相似度为1
+	// 如果两个字符串完全相同，相似度为 1
 	if str1 == str2 {
 		return 1.0
+	}
+	
+	// 对于长度差异过大的字符串，直接返回较低的相似度
+	maxLen := int(math.Max(float64(len1), float64(len2)))
+	minLen := int(math.Min(float64(len1), float64(len2)))
+	lengthRatio := float64(minLen) / float64(maxLen)
+	
+	// 如果长度差异超过50%，相似度会受到惩罚
+	if lengthRatio < 0.5 {
+		return lengthRatio * 0.5 // 最高相似度限制为25%
 	}
 	
 	// 创建距离矩阵
@@ -223,11 +256,11 @@ func calculateLevenshteinSimilarity(str1, str2 string) float64 {
 		matrix[0][j] = j
 	}
 	
-	// 填充矩阵
+	// 填充矩阵，逐字符比较
 	for i := 1; i <= len1; i++ {
 		for j := 1; j <= len2; j++ {
 			cost := 1
-			if str1[i-1] == str2[j-1] {
+			if runes1[i-1] == runes2[j-1] {
 				cost = 0
 			}
 			matrix[i][j] = min(
@@ -238,17 +271,19 @@ func calculateLevenshteinSimilarity(str1, str2 string) float64 {
 		}
 	}
 	
-	// 计算距离
+	// 计算 Levenshtein 距离
 	distance := matrix[len1][len2]
 	
-	// 计算相似度
-	maxLen := int(math.Max(float64(len1), float64(len2)))
-	if maxLen == 0 {
-		return 1.0
+	// 计算相似度，使用更严格的评分标准
+	// 相似度 = 1 - (编辑距离 / 最大长度)
+	similarity := 1.0 - float64(distance)/float64(maxLen)
+	
+	// 确保相似度在 [0, 1] 范围内
+	if similarity < 0 {
+		similarity = 0
 	}
 	
-	// 返回基于距离的相似度
-	return 1.0 - float64(distance)/float64(maxLen)
+	return similarity
 }
 
 // splitIntoWords 将字符串拆分为单词集合

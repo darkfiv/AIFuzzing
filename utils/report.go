@@ -20,6 +20,7 @@ type Report struct {
 	TotalVulnerable   int           `json:"totalVulnerable"`
 	TotalUnknown      int           `json:"totalUnknown"`
 	TotalSafe         int           `json:"totalSafe"`
+	TotalFalsePositive int          `json:"totalFalsePositive"`
 	VulnerableResults []interface{} `json:"vulnerableResults"`
 	UnknownResults    []interface{} `json:"unknownResults"`
 }
@@ -204,12 +205,12 @@ func (rg *ReportGenerator) generateExcelReport() (string, error) {
 		f.NewSheet(vulnSheet)
 
 		// 设置表头
-		headers := []string{"#", "方法", "URL", "漏洞类型", "相似度", "原因", "详细信息"}
+		headers := []string{"#", "方法", "URL", "漏洞类型", "相似度", "原因", "误报标记", "详细信息"}
 		for i, header := range headers {
 			cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 			f.SetCellValue(vulnSheet, cell, header)
 		}
-		f.SetCellStyle(vulnSheet, "A1", "G1", headerStyle)
+		f.SetCellStyle(vulnSheet, "A1", "H1", headerStyle)
 
 		// 写入数据
 		for i, result := range report.VulnerableResults {
@@ -222,12 +223,20 @@ func (rg *ReportGenerator) generateExcelReport() (string, error) {
 			f.SetCellValue(vulnSheet, fmt.Sprintf("D%d", row), r["vulnType"])
 			f.SetCellValue(vulnSheet, fmt.Sprintf("E%d", row), r["similarity"])
 			f.SetCellValue(vulnSheet, fmt.Sprintf("F%d", row), r["reason"])
+			
+			// 添加误报标记
+			isFalsePositive, _ := r["isFalsePositive"].(bool)
+			falsePositiveText := "否"
+			if isFalsePositive {
+				falsePositiveText = "是"
+			}
+			f.SetCellValue(vulnSheet, fmt.Sprintf("G%d", row), falsePositiveText)
 
 			// 详细信息
 			details := fmt.Sprintf("原始请求头: %s\n\n原始请求体: %s\n\n未授权请求头: %s\n\n未授权请求体: %s\n\n"+
 				"原始响应: %s\n\n未授权响应: %s",
 				r["headerA"], r["requestA"], r["headerB"], r["requestB"], r["respBodyA"], r["respBodyB"])
-			f.SetCellValue(vulnSheet, fmt.Sprintf("G%d", row), details)
+			f.SetCellValue(vulnSheet, fmt.Sprintf("H%d", row), details)
 		}
 
 		// 设置列宽
@@ -237,7 +246,8 @@ func (rg *ReportGenerator) generateExcelReport() (string, error) {
 		f.SetColWidth(vulnSheet, "D", "D", 15)
 		f.SetColWidth(vulnSheet, "E", "E", 10)
 		f.SetColWidth(vulnSheet, "F", "F", 30)
-		f.SetColWidth(vulnSheet, "G", "G", 50)
+		f.SetColWidth(vulnSheet, "G", "G", 10)
+		f.SetColWidth(vulnSheet, "H", "H", 50)
 	}
 
 	// 创建未知状态工作表
@@ -301,6 +311,7 @@ func (rg *ReportGenerator) prepareReportData() Report {
 	var vulnerableResults []interface{}
 	var unknownResults []interface{}
 	var totalSafe int
+	var totalFalsePositive int
 
 	for _, result := range rg.Results {
 		// 确保结果是一个有效的 map[string]interface{}
@@ -346,6 +357,9 @@ func (rg *ReportGenerator) prepareReportData() Report {
 		if _, ok := r["vulnType"]; !ok {
 			r["vulnType"] = ""
 		}
+		if _, ok := r["isFalsePositive"]; !ok {
+			r["isFalsePositive"] = false
+		}
 		
 		// 确保similarity字段一定是float64类型
 		simValue, ok := r["similarity"].(float64)
@@ -383,6 +397,11 @@ func (rg *ReportGenerator) prepareReportData() Report {
 			r["scanTime"] = time.Now().Format("2006-01-02 15:04:05")
 		}
 
+		// 检查是否为误报
+		if isFalsePositive, ok := r["isFalsePositive"].(bool); ok && isFalsePositive {
+			totalFalsePositive++
+		}
+
 		switch resultStr {
 		case "true":
 			vulnerableResults = append(vulnerableResults, r)
@@ -401,7 +420,21 @@ func (rg *ReportGenerator) prepareReportData() Report {
 		TotalVulnerable:   len(vulnerableResults),
 		TotalUnknown:      len(unknownResults),
 		TotalSafe:         totalSafe,
+		TotalFalsePositive: totalFalsePositive,
 		VulnerableResults: vulnerableResults,
 		UnknownResults:    unknownResults,
+	}
+}
+
+// UpdateFalsePositive 更新报告中指定结果的误报状态
+func (rg *ReportGenerator) UpdateFalsePositive(index int, isFalsePositive bool) {
+	if index < 0 || index >= len(rg.Results) {
+		return
+	}
+
+	// 将结果转换为map以便更新
+	if result, ok := rg.Results[index].(map[string]interface{}); ok {
+		result["isFalsePositive"] = isFalsePositive
+		rg.Results[index] = result
 	}
 }

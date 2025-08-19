@@ -98,6 +98,8 @@ type ProxyConfig struct {
 // 配置结构
 type Config struct {
 	AI                 string            `json:"AI"`
+	AIAPI              string            `json:"AIApi"`
+	AIMODEL            string            `json:"AIModel"`
 	EnableAI           bool              `json:"enableAI"`
 	Headers2           map[string]string `json:"headers2"`
 	Suffixes           []string          `json:"suffixes"`
@@ -109,6 +111,7 @@ type Config struct {
 		HunYuan  string `json:"hunyuan"`
 		Gpt      string `json:"gpt"`
 		Glm      string `json:"glm"`
+		Other    string `json:"other"`
 	} `json:"apiKeys"`
 	RespBodyBWhiteList []string `json:"respBodyBWhiteList"`
 	// 新增配置项
@@ -143,7 +146,7 @@ var Prompt = `{
   },
   "analysisRequirements": {
     "structureAndContentComparison": {
-      "urlAnalysis": "结合原始请求A和响应A分析，判断是否可能是无需数据鉴权的公共接口（不作为主要判断依据）。",
+      "urlAnalysis": "结合原始请求A和响应A分析，判断是否可能是无需数据鉴权的公共接口（可以从原始请求url中查看有否存在增删改查的敏感字段，如果存在，则判定非公共接口）。",
       "responseComparison": "比较响应A和响应B的结构和内容，忽略动态字段（如时间戳、随机数、会话ID、X-Request-ID等），并进行语义匹配。",
       "httpStatusCode": "对比HTTP状态码：403/401直接判定越权失败（false），500标记为未知（unknown），200需进一步分析。",
       "similarityAnalysis": "使用字段对比和文本相似度计算（Levenshtein/Jaccard）评估内容相似度。",
@@ -174,7 +177,7 @@ var Prompt = `{
   ],
   "process": [
     "接收并理解原始请求A、responseA和responseB。",
-    "分析原始请求A，判断是否是无需鉴权的公共接口。",
+    "分析原始请求A，判断是否是无需鉴权的公共接口（可以从请求的url中查看有否存在增删改查的敏感字段，如果存在，则判定非公共接口）。",
     "提取并忽略动态字段（时间戳、随机数、会话ID）。",
     "对比HTTP状态码，403/401直接判定为false，500标记为unknown。",
     "检查responseB是否包含敏感数据（如手机号、身份证号、邮箱、银行卡号），如果有，且敏感数据与responseA的敏感数据基本一致，则判定为true。",
@@ -304,84 +307,6 @@ func GetConfig() *Config {
 	configLock.RLock()
 	defer configLock.RUnlock()
 	return conf
-}
-
-// 获取配置的JSON字符串
-func GetConfigJSON() (string, error) {
-	configLock.RLock()
-	defer configLock.RUnlock()
-
-	data, err := json.MarshalIndent(conf, "", "  ")
-	if err != nil {
-		return "", err
-	}
-
-	return string(data), nil
-}
-
-// 更新配置文件
-func UpdateConfig(newConfig *Config) error {
-	configLock.Lock()
-	defer configLock.Unlock()
-
-	// 更新内存中的配置
-	conf = newConfig
-
-	// 序列化为JSON
-	data, err := json.MarshalIndent(conf, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	// 写入文件
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// GetAPIKey 根据AI类型获取对应的API密钥
-func GetAPIKey(ai string) string {
-	configLock.RLock()
-	defer configLock.RUnlock()
-
-	switch ai {
-	case "kimi":
-		return conf.APIKeys.Kimi
-	case "deepseek":
-		return conf.APIKeys.DeepSeek
-	case "qianwen":
-		return conf.APIKeys.Qianwen
-	case "hunyuan":
-		return conf.APIKeys.HunYuan
-	case "gpt":
-		return conf.APIKeys.Gpt
-	case "glm":
-		return conf.APIKeys.Glm
-	default:
-		return ""
-	}
-}
-
-// GetAPIURL 根据AI类型获取对应的API URL
-func GetAPIURL(ai string) string {
-	switch ai {
-	case "kimi":
-		return "https://api.moonshot.cn/v1/chat/completions"
-	case "deepseek":
-		return "https://api.deepseek.com/v1/chat/completions"
-	case "qianwen":
-		return "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
-	case "hunyuan":
-		return "https://hunyuan.tencent.com/hyllm/v1/chat/completions"
-	case "gpt":
-		return "https://api.openai.com/v1/chat/completions"
-	case "glm":
-		return "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-	default:
-		return ""
-	}
 }
 
 // 替代原来的init函数

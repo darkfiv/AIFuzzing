@@ -83,8 +83,9 @@ graph TD
 
 ### 系统要求
 - 支持 Windows、macOS 和 Linux
+- 建议至少 4GB RAM
 
-### 下载安装
+### 方式一：下载预编译版本（推荐）
 从 [Releases](https://github.com/darkfiv/AIFuzzing/releases) 下载对应平台的二进制文件：
 
 | 平台 | 文件名 |
@@ -99,6 +100,70 @@ graph TD
 - 配置文件 (`config.json`)
 - Web界面文件 (`index.html`)
 - 白名单配置文件 (`whitelist.txt`)
+
+### 方式二：从源码编译
+
+如果您需要自定义功能或开发版本，可以从源码编译：
+
+#### 环境要求
+- Go 1.18 或更高版本
+- Git
+
+#### 编译步骤
+
+1. **克隆仓库**
+```bash
+git clone https://github.com/darkfiv/AIFuzzing.git
+cd AIFuzzing
+```
+
+2. **安装依赖**
+```bash
+go mod download
+```
+
+3. **编译项目**
+```bash
+# 编译当前平台版本
+go build -o AIFuzzing
+
+# 编译多平台版本
+# Windows
+GOOS=windows GOARCH=amd64 go build -o AIFuzzing.exe
+
+# macOS (Intel)
+GOOS=darwin GOARCH=amd64 go build -o AIFuzzing_macos_amd64
+
+# macOS (Apple Silicon)
+GOOS=darwin GOARCH=arm64 go build -o AIFuzzing_macos_arm64
+
+# Linux
+GOOS=linux GOARCH=amd64 go build -o AIFuzzing_linux_amd64
+```
+
+4. **运行项目**
+```bash
+# 使用默认配置
+./AIFuzzing
+
+# 指定配置文件
+./AIFuzzing -config my-config.json
+
+# 指定端口
+./AIFuzzing -port 9090
+```
+
+#### 开发模式运行
+```bash
+# 启用调试日志
+./AIFuzzing -log debug
+
+# 启用文件日志
+./AIFuzzing -logFile
+
+# 禁用Web界面（仅代理模式）
+./AIFuzzing -disableWebUI
+```
 
 ## 🚀 快速开始
 
@@ -219,11 +284,18 @@ AIFuzzing.exe
 
 ## 🔄 更新日志
 
-### v1.0.5
+### v1.0.6
 - ✅ 新增误报标记与筛选功能
 - ✅ 修复HTML响应内容转义问题
 - ✅ 优化用户界面交互体验
 - ✅ 提升数据展示安全性
+
+### v1.0.5
+- 🚀 首次发布版本
+- 🔍 支持未授权访问检测
+- 🛡️ 支持越权漏洞检测
+- 🤖 集成AI智能分析
+- 📊 提供Web管理界面
 
 [查看完整更新日志](https://github.com/darkfiv/AIFuzzing/releases)
 
@@ -234,8 +306,32 @@ AIFuzzing.exe
 - 🐛 [报告Bug](https://github.com/darkfiv/AIFuzzing/issues/new?template=bug_report.md)
 - 💡 [功能建议](https://github.com/darkfiv/AIFuzzing/issues/new?template=feature_request.md)
 
-### 有什么问题可以进群问
+### 技术交流群
+有什么问题可以进群问
 ![image](https://github.com/user-attachments/assets/4e1562c0-01b3-49e3-90e5-48fe300aad6e)
+
+## 🛠️ 开发指南
+
+### 项目结构
+```
+AIFuzzing/
+├── main.go              # 主程序入口
+├── config/              # 配置管理
+├── scanner/             # 扫描核心逻辑
+├── utils/               # 工具函数
+├── workerpool/          # 工作池管理
+├── similarity/          # 相似度计算
+├── static/              # 静态资源文件
+├── index.html           # Web界面
+└── config.json          # 配置文件
+```
+
+### 开发环境搭建
+1. 确保已安装Go 1.18+
+2. 克隆项目并进入目录
+3. 运行 `go mod download` 安装依赖
+4. 使用 `go run main.go` 启动开发模式
+
 
 
 ## 📄 免责声明

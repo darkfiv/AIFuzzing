@@ -307,7 +307,7 @@ AIFuzzing.exe
 ## 🔄 更新日志
 
 ### v1.0.6
-- ✅ 解决白名单兼容IP地址配置形式问题
+- ✅ 解决whitelist白名单无法匹配IP的问题
 - ✅ 解决内网环境下报错" either ServerName or InsecureSkipVerify must be specified in the tls.Config"的问题
 
 

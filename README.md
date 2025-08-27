@@ -324,7 +324,8 @@ AIFuzzing.exe
 
 ### 技术交流群
 有什么问题可以进群问
-![image](https://github.com/user-attachments/assets/4e1562c0-01b3-49e3-90e5-48fe300aad6e)
+![image](https://github.com/user-attachments/assets/83d0b3eb-7598-4b6e-8eaf-526e83b458cd)
+
 
 
 

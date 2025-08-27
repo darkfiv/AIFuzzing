@@ -11,6 +11,7 @@ import (
 var (
 	whitelistDomains = make(map[string]bool)
 	whitelistIPs     = make(map[string]bool)
+	whitelistCIDRs   = make([]*net.IPNet, 0)
 	whitelistMutex   sync.RWMutex
 )
 
@@ -37,16 +38,25 @@ func LoadWhitelist() error {
 
 	whitelistDomains = make(map[string]bool)
 	whitelistIPs = make(map[string]bool)
+	whitelistCIDRs = make([]*net.IPNet, 0)
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line != "" && !strings.HasPrefix(line, "#") {
+			// 优先尝试解析为CIDR网段
+			if _, ipnet, err := net.ParseCIDR(line); err == nil && ipnet != nil {
+				whitelistCIDRs = append(whitelistCIDRs, ipnet)
+				continue
+			}
+
 			// 检查是否为IP地址
 			if ip := net.ParseIP(line); ip != nil {
 				whitelistIPs[line] = true
-			} else {
-			whitelistDomains[line] = true
+				continue
 			}
+
+			// 其他按域名记录
+			whitelistDomains[line] = true
 		}
 	}
 	return nil
@@ -57,17 +67,42 @@ func IsWhitelisted(hostname string) bool {
 	whitelistMutex.RLock()
 	defer whitelistMutex.RUnlock()
 
-	if len(whitelistDomains) == 0 && len(whitelistIPs) == 0 {
+	if len(whitelistDomains) == 0 && len(whitelistIPs) == 0 && len(whitelistCIDRs) == 0 {
 		return true // 如果白名单为空，则处理所有请求
 	}
 
-	// 检查是否为IP地址
-	if ip := net.ParseIP(hostname); ip != nil {
-		return whitelistIPs[hostname]
+	// 先移除端口（host:port）再判断
+	hostOnly := hostname
+	if h, _, err := net.SplitHostPort(hostname); err == nil && h != "" {
+		hostOnly = h
+	} else {
+		// 处理简单的 host:port 场景
+		if i := strings.LastIndex(hostname, ":"); i > -1 {
+			possibleHost := hostname[:i]
+			if net.ParseIP(possibleHost) != nil {
+				hostOnly = possibleHost
+			}
+		}
 	}
 
-	// 提取顶级域名
-	topLevelDomain := ExtractTopLevelDomain(hostname)
-	return whitelistDomains[topLevelDomain]
+	// 检查是否为IP地址（含CIDR匹配）
+	if ip := net.ParseIP(hostOnly); ip != nil {
+		if whitelistIPs[hostOnly] {
+			return true
+		}
+		for _, ipnet := range whitelistCIDRs {
+			if ipnet.Contains(ip) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// 提取顶级域名或完整域名匹配
+	topLevelDomain := ExtractTopLevelDomain(hostOnly)
+	if whitelistDomains[topLevelDomain] {
+		return true
+	}
+	return whitelistDomains[hostOnly]
 }
 

@@ -139,8 +139,9 @@ func main() {
 		go index(conf.Output.WebUIPort) // Web界面
 	}
 
-	go mitmproxy(conf.Proxy.Port, conf.Proxy.StreamLargeBodies) // 代理服务
+	go mitmproxy(conf.Proxy.Port, conf.Proxy.StreamLargeBodies, conf) // 代理服务
 
+	// 同步启动扫描功能以阻塞主进程，避免程序提前退出
 	scan() // 扫描功能
 }
 
@@ -518,56 +519,82 @@ func index(port int) {
 		c.File(filepath)
 	})
 
-	// 添加更新误报状态的API
+	// 添加更新误报状态的API（兼容按ID或按字段更新）
 	r.POST("/updateFalsePositive", func(c *gin.Context) {
 		var updateData struct {
-			ID             string `json:"id"`
-			IsFalsePositive bool  `json:"isFalsePositive"`
+			ID               string `json:"id"`
+			IsFalsePositive  bool   `json:"isFalsePositive"`
+			Method           string `json:"method"`
+			Url              string `json:"url"`
+			VulnType         string `json:"vulnType"`
 		}
 		if err := c.ShouldBindJSON(&updateData); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据: " + err.Error()})
 			return
 		}
 
-		// 验证ID格式
-		if !strings.HasPrefix(updateData.ID, "result-") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID格式"})
+		// 优先按 ID 更新（保持向后兼容）
+		if updateData.ID != "" {
+			if !strings.HasPrefix(updateData.ID, "result-") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID格式"})
+				return
+			}
+			idStr := strings.TrimPrefix(updateData.ID, "result-")
+			index, err := strconv.Atoi(idStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID数字: " + err.Error()})
+				return
+			}
+			if index < 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID: 索引不能为负数"})
+				return
+			}
+			if index >= len(Resp) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "未找到指定ID的漏洞记录"})
+				return
+			}
+			Resp[index].IsFalsePositive = updateData.IsFalsePositive
+			if reportGenerator != nil {
+				reportGenerator.UpdateFalsePositive(index, updateData.IsFalsePositive)
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"message":        "误报状态更新成功",
+				"id":             updateData.ID,
+				"isFalsePositive": updateData.IsFalsePositive,
+				"record":         Resp[index],
+			})
 			return
 		}
 
-		// 提取ID中的索引
-		idStr := strings.TrimPrefix(updateData.ID, "result-")
-		index, err := strconv.Atoi(idStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID数字: " + err.Error()})
+		// 若未提供 ID，则按 Method+URL+VulnType 批量更新（与前端一致）
+		if updateData.Method == "" || updateData.Url == "" || updateData.VulnType == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少必要字段：method/url/vulnType 或 id"})
 			return
 		}
 
-		// 检查索引是否在有效范围内
-		if index < 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID: 索引不能为负数"})
-			return
+		targetVulnLower := strings.ToLower(updateData.VulnType)
+		updated := 0
+		for i := range Resp {
+			if Resp[i].Method == updateData.Method &&
+				Resp[i].Url == updateData.Url &&
+				strings.ToLower(Resp[i].VulnType) == targetVulnLower {
+				Resp[i].IsFalsePositive = updateData.IsFalsePositive
+				if reportGenerator != nil {
+					reportGenerator.UpdateFalsePositive(i, updateData.IsFalsePositive)
+				}
+				updated++
+			}
 		}
-		
-		if index >= len(Resp) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "未找到指定ID的漏洞记录"})
+
+		if updated == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "未找到匹配的记录"})
 			return
 		}
 
-		// 更新误报状态
-		Resp[index].IsFalsePositive = updateData.IsFalsePositive
-		
-		// 如果有报告生成器，同时更新报告中的数据
-		if reportGenerator != nil {
-			reportGenerator.UpdateFalsePositive(index, updateData.IsFalsePositive)
-		}
-
-		// 返回更新后的完整记录
 		c.JSON(http.StatusOK, gin.H{
-			"message": "误报状态更新成功",
-			"id": updateData.ID,
+			"message":         "误报状态更新成功",
+			"updatedCount":    updated,
 			"isFalsePositive": updateData.IsFalsePositive,
-			"record": Resp[index],
 		})
 	})
 
@@ -735,7 +762,22 @@ func (a *MyAddon) Error(f *proxy.Flow) {
 }
 
 // mitmproxy 启动代理服务
-func mitmproxy(port int, streamLargeBodies int) {
+func mitmproxy(port int, streamLargeBodies int, conf *config.Config) {
+	// 添加空指针检查
+	if conf == nil {
+		utils.Error("配置未初始化，使用默认配置")
+		// 使用默认配置
+		conf = &config.Config{
+			Proxy: config.ProxyConfig{
+				TLSConfig: struct {
+					InsecureSkipVerify bool   `json:"insecureSkipVerify"`
+					ServerName         string `json:"serverName"`
+				}{
+					InsecureSkipVerify: true, // 默认跳过证书验证
+				},
+			},
+		}
+	}
 
 	portStr := ":9080" // 默认端口
 	if port > 0 {
@@ -753,7 +795,16 @@ func mitmproxy(port int, streamLargeBodies int) {
 		Addr:              portStr,
 		StreamLargeBodies: int64(streamLargeBodies),
 		Debug:             1,
+	}
 
+	// 根据配置设置SSL跳过验证
+	if conf != nil && conf.Proxy.TLSConfig.InsecureSkipVerify {
+		opts.SslInsecure = true
+		utils.Info("已启用SSL跳过证书验证")
+	} else {
+		// 默认启用SSL跳过验证，解决内网应用证书问题
+		opts.SslInsecure = true
+		utils.Info("使用默认配置：已启用SSL跳过证书验证")
 	}
 
 	

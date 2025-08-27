@@ -93,6 +93,10 @@ type ProxyConfig struct {
 	Port               int  `json:"port"`               // 代理端口
 	StreamLargeBodies  int  `json:"streamLargeBodies"`  // 大请求体流式处理限制
 	EnableCertVerifier bool `json:"enableCertVerifier"` // 是否启用证书验证
+	TLSConfig          struct {
+		InsecureSkipVerify bool   `json:"insecureSkipVerify"` // 是否跳过TLS证书验证
+		ServerName         string `json:"serverName"`          // 指定TLS服务器名称
+	} `json:"tlsConfig"` // TLS配置
 }
 
 // 配置结构

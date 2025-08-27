@@ -19,7 +19,7 @@ type CommandLineArgs struct {
 }
 
 // VERSION 版本号
-const VERSION = "1.0.0"
+const VERSION = "1.0.5"
 
 // ParseCommandLine 解析命令行参数
 func ParseCommandLine() CommandLineArgs {

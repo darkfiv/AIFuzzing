@@ -305,11 +305,11 @@ AIFuzzing.exe
 - 📖 [详细使用教程](https://github.com/darkfiv/AIFuzzing/blob/main/AIFuzzing%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E4%B9%A6.pdf)
 
 ## 🔄 更新日志
-### v1.0.5
-- ✅ 新增误报标记与筛选功能
-- ✅ 修复HTML响应内容转义问题
-- ✅ 优化用户界面交互体验
-- ✅ 提升数据展示安全性
+
+### v1.0.6
+- ✅ 解决白名单兼容IP地址配置形式问题
+- ✅ 解决内网环境下报错" either ServerName or InsecureSkipVerify must be specified in the tls.Config"的问题
+
 
 
 

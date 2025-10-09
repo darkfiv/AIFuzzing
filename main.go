@@ -91,6 +91,43 @@ func getRequestId(r *http.Request) string {
 	return idStr
 }
 
+// findResourcePath 查找资源文件或目录的路径
+// 按以下顺序查找：
+// 1. 当前目录
+// 2. 可执行文件所在目录
+// 3. 可执行文件所在目录的上级目录
+func findResourcePath(baseDir, resourceName string) string {
+	// 可能的查找路径列表
+	searchPaths := []string{
+		// 当前工作目录
+		resourceName,
+		filepath.Join(".", resourceName),
+		// 可执行文件所在目录
+		filepath.Join(baseDir, resourceName),
+		// 可执行文件上级目录（适用于build子目录的情况）
+		filepath.Join(filepath.Dir(baseDir), resourceName),
+		// 项目根目录（如果在更深的子目录中）
+		filepath.Join(filepath.Dir(filepath.Dir(baseDir)), resourceName),
+	}
+
+	// 按顺序检查每个路径
+	for _, path := range searchPaths {
+		// 检查路径是否存在
+		if _, err := os.Stat(path); err == nil {
+			// 转换为绝对路径
+			absPath, err := filepath.Abs(path)
+			if err == nil {
+				return absPath
+			}
+			return path
+		}
+	}
+
+	// 如果都找不到，返回相对于当前工作目录的默认路径
+	utils.Warning("资源 '%s' 在所有搜索路径中都未找到，使用默认路径", resourceName)
+	return resourceName
+}
+
 // main 启动程序的主函数
 func main() {
 	// 解析命令行参数
@@ -215,12 +252,32 @@ func index(port int) {
 
 	r := gin.Default()
 
+	// 获取可执行文件所在目录或当前工作目录
+	execPath, err := os.Executable()
+	var baseDir string
+	if err != nil {
+		// 如果获取可执行文件路径失败，使用当前工作目录
+		baseDir, _ = os.Getwd()
+		utils.Warning("无法获取可执行文件路径，使用当前工作目录: %s", baseDir)
+	} else {
+		// 获取可执行文件所在目录
+		baseDir = filepath.Dir(execPath)
+		utils.Info("可执行文件目录: %s", baseDir)
+	}
+
+	// 尝试多个可能的路径查找静态文件和index.html
+	staticDir := findResourcePath(baseDir, "static")
+	indexFile := findResourcePath(baseDir, "index.html")
+
+	utils.Info("使用静态文件目录: %s", staticDir)
+	utils.Info("使用index.html路径: %s", indexFile)
+
 	// 设置静态文件服务
-	r.Static("/static", "./static")
+	r.Static("/static", staticDir)
 
 	// 设置路由
 	r.GET("/", func(c *gin.Context) {
-		c.File("index.html")
+		c.File(indexFile)
 	})
 
 	// 提供 API 接口

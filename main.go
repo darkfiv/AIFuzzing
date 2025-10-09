@@ -93,13 +93,21 @@ func getRequestId(r *http.Request) string {
 
 // findResourcePath 查找资源文件或目录的路径
 // 按以下顺序查找：
-// 1. 当前目录
+// 1. 当前工作目录
 // 2. 可执行文件所在目录
 // 3. 可执行文件所在目录的上级目录
 func findResourcePath(baseDir, resourceName string) string {
+	// 获取当前工作目录
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+
 	// 可能的查找路径列表
 	searchPaths := []string{
 		// 当前工作目录
+		filepath.Join(cwd, resourceName),
+		// 相对路径
 		resourceName,
 		filepath.Join(".", resourceName),
 		// 可执行文件所在目录
@@ -110,22 +118,35 @@ func findResourcePath(baseDir, resourceName string) string {
 		filepath.Join(filepath.Dir(filepath.Dir(baseDir)), resourceName),
 	}
 
+	utils.Info("[资源查找] 正在查找资源: %s", resourceName)
+	utils.Info("[资源查找] 当前工作目录: %s", cwd)
+	utils.Info("[资源查找] 可执行文件目录: %s", baseDir)
+
 	// 按顺序检查每个路径
-	for _, path := range searchPaths {
+	for i, path := range searchPaths {
+		utils.Debug("[资源查找] 尝试路径 %d: %s", i+1, path)
+		
 		// 检查路径是否存在
-		if _, err := os.Stat(path); err == nil {
+		if info, err := os.Stat(path); err == nil {
 			// 转换为绝对路径
 			absPath, err := filepath.Abs(path)
 			if err == nil {
+				utils.Info("[资源查找] ✓ 找到资源: %s (绝对路径: %s, 是目录: %v)", resourceName, absPath, info.IsDir())
 				return absPath
 			}
+			utils.Info("[资源查找] ✓ 找到资源: %s (路径: %s, 是目录: %v)", resourceName, path, info.IsDir())
 			return path
+		} else {
+			utils.Debug("[资源查找] ✗ 路径不存在: %s (错误: %v)", path, err)
 		}
 	}
 
 	// 如果都找不到，返回相对于当前工作目录的默认路径
-	utils.Warning("资源 '%s' 在所有搜索路径中都未找到，使用默认路径", resourceName)
-	return resourceName
+	utils.Warning("[资源查找] 资源 '%s' 在所有搜索路径中都未找到，使用默认路径", resourceName)
+	// 最后尝试返回与可执行文件同目录的路径
+	defaultPath := filepath.Join(baseDir, resourceName)
+	utils.Warning("[资源查找] 使用默认路径: %s", defaultPath)
+	return defaultPath
 }
 
 // main 启动程序的主函数
@@ -260,9 +281,16 @@ func index(port int) {
 		baseDir, _ = os.Getwd()
 		utils.Warning("无法获取可执行文件路径，使用当前工作目录: %s", baseDir)
 	} else {
-		// 获取可执行文件所在目录
-		baseDir = filepath.Dir(execPath)
-		utils.Info("可执行文件目录: %s", baseDir)
+		// 解析符号链接，获取真实路径
+		realPath, err := filepath.EvalSymlinks(execPath)
+		if err != nil {
+			utils.Warning("无法解析可执行文件符号链接，使用原始路径: %s", execPath)
+			baseDir = filepath.Dir(execPath)
+		} else {
+			baseDir = filepath.Dir(realPath)
+			utils.Info("可执行文件真实路径: %s", realPath)
+		}
+		utils.Info("可执行文件所在目录: %s", baseDir)
 	}
 
 	// 尝试多个可能的路径查找静态文件和index.html
@@ -272,11 +300,39 @@ func index(port int) {
 	utils.Info("使用静态文件目录: %s", staticDir)
 	utils.Info("使用index.html路径: %s", indexFile)
 
+	// 验证资源文件是否存在
+	if info, err := os.Stat(staticDir); err != nil || !info.IsDir() {
+		utils.Error("静态文件目录不存在或不是目录: %s (错误: %v)", staticDir, err)
+		utils.Error("请确保 static 目录与可执行文件在同一目录下")
+	} else {
+		utils.Info("✓ 静态文件目录验证成功: %s", staticDir)
+		// 列出static目录的内容
+		if files, err := os.ReadDir(staticDir); err == nil {
+			utils.Info("静态文件目录内容 (%d个文件):", len(files))
+			for _, file := range files {
+				utils.Info("  - %s", file.Name())
+			}
+		}
+	}
+
+	if _, err := os.Stat(indexFile); err != nil {
+		utils.Error("index.html文件不存在: %s (错误: %v)", indexFile, err)
+		utils.Error("请确保 index.html 与可执行文件在同一目录下")
+	} else {
+		utils.Info("✓ index.html文件验证成功: %s", indexFile)
+	}
+
 	// 设置静态文件服务
 	r.Static("/static", staticDir)
 
 	// 设置路由
 	r.GET("/", func(c *gin.Context) {
+		// 运行时再次检查文件是否存在
+		if _, err := os.Stat(indexFile); err != nil {
+			utils.Error("访问/时找不到index.html: %s", indexFile)
+			c.String(http.StatusNotFound, "找不到 index.html 文件。请确保以下文件存在:\n- index.html\n- static/\n\n当前查找路径: %s", indexFile)
+			return
+		}
 		c.File(indexFile)
 	})
 

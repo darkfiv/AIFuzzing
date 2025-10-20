@@ -305,11 +305,8 @@ AIFuzzing.exe
 - 📖 [详细使用教程](https://github.com/darkfiv/AIFuzzing/blob/main/AIFuzzing%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E4%B9%A6.pdf)
 
 ## 🔄 更新日志
-
-### v1.0.6
-- ✅ 解决whitelist白名单无法匹配IP的问题
-- ✅ 解决内网环境下报错" either ServerName or InsecureSkipVerify must be specified in the tls.Config"的问题
-
+### v1.0.7版本更新
+- 解决内网环境下结果展示界面渲染错乱的问题
 
 
 

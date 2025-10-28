@@ -322,7 +322,7 @@ AIFuzzing.exe
 - 💡 [功能建议](https://github.com/darkfiv/AIFuzzing/issues/new?template=feature_request.md)
 
 ### 技术交流群
-有什么问题可以进群问
+有什么问题可以进群问，二维码过期可以加我微信 a2523617635
 ![微信图片_20251008215013](https://github.com/user-attachments/assets/b2265511-87f7-4a6b-98b0-ca670006a730)
 
 

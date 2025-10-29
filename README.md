@@ -323,7 +323,8 @@ AIFuzzing.exe
 
 ### 技术交流群
 有什么问题可以进群问，二维码过期可以加我微信 a2523617635
-![微信图片_20251008215013](https://github.com/user-attachments/assets/b2265511-87f7-4a6b-98b0-ca670006a730)
+![1fea405919b6820f206d9e7eb79b0b93](https://github.com/user-attachments/assets/0196f776-1d91-42cb-bfdd-f4219d893648)
+
 
 
 

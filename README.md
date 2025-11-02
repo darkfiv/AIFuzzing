@@ -145,6 +145,7 @@ GOOS=linux GOARCH=amd64 go build -o AIFuzzing_linux_amd64
 
 ### 安装证书步骤
 #### 1、查看~/.mitmproxy/目录下是否包含这个证书
+C:\Users\darkfive\\.mitmproxy #darkfive替换成自己的用户名
 ![fccef4bdab7f67c861b9355737d57aaabad2d7a4_knock_capture_image](https://github.com/user-attachments/assets/3ce88aa0-7643-4b93-aa0e-181cfbf362da)
 
 #### 2、不包含的话删除掉~/.mitmproxy/目录下所有文件，重新生成证书：

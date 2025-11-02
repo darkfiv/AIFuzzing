@@ -141,7 +141,17 @@ GOOS=darwin GOARCH=arm64 go build -o AIFuzzing_macos_arm64
 GOOS=linux GOARCH=amd64 go build -o AIFuzzing_linux_amd64
 ```
 
-4. **运行项目**
+4. **运行项目【确保已经安装好了mitmproxy证书】**
+怎么安装
+```bash
+1、查看~/.mitmproxy/目录下是否包含这个证书
+![fccef4bdab7f67c861b9355737d57aaabad2d7a4_knock_capture_image](https://github.com/user-attachments/assets/3ce88aa0-7643-4b93-aa0e-181cfbf362da)
+2、不包含的话删除掉~/.mitmproxy/目录下所有文件，重新生成证书
+步骤：
+① python -m pip install mitmdump
+② mitmdump
+③ 将~/.mitmproxy/目录下生成的mitmproxy-ca.p12证书导入到受信任的根证书颁发机构 【安装到当前用户】
+```
 ```bash
 # 使用默认配置
 ./AIFuzzing

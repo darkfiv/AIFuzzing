@@ -940,8 +940,8 @@ func mitmproxy(port int, streamLargeBodies int, conf *config.Config) {
 			utils.Error("无法获取USERPROFILE环境变量")
 			// 尝试使用其他可能的位置
 			possiblePaths := []string{
-				filepath.Join("C:", "Users", os.Getenv("USERNAME"), ".mitmproxy", "mitmproxy-ca-cert.pem"),
-				filepath.Join("C:", "Users", os.Getenv("USERNAME"), "AppData", "Local", "mitmproxy", "mitmproxy-ca-cert.pem"),
+				filepath.Join("C:", "Users", os.Getenv("USERNAME"), ".mitmproxy", "mitmproxy-ca.p12"),
+				filepath.Join("C:", "Users", os.Getenv("USERNAME"), "AppData", "Local", "mitmproxy", "mitmproxy-ca.p12"),
 			}
 			for _, path := range possiblePaths {
 				if _, err := os.Stat(path); err == nil {
@@ -954,7 +954,7 @@ func mitmproxy(port int, streamLargeBodies int, conf *config.Config) {
 			}
 		} else {
 			// 直接使用展开后的路径
-			certPath = filepath.Join(userProfile, ".mitmproxy", "mitmproxy-ca-cert.pem")
+			certPath = filepath.Join(userProfile, ".mitmproxy", "mitmproxy-ca.p12")
 			utils.Info("使用证书路径: %s", certPath)
 		}
 		// 确保路径使用Windows风格的分隔符
@@ -977,9 +977,9 @@ func mitmproxy(port int, streamLargeBodies int, conf *config.Config) {
 	case "darwin": // macOS
 		// macOS系统下检查多个可能的位置
 		possiblePaths := []string{
-			os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca-cert.pem"),
-			os.ExpandEnv("${HOME}/Library/Application Support/mitmproxy/mitmproxy-ca-cert.pem"),
-			"/usr/local/etc/mitmproxy/mitmproxy-ca-cert.pem",
+			os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca.p12"),
+			os.ExpandEnv("${HOME}/Library/Application Support/mitmproxy/mitmproxy-ca.p12"),
+			"/usr/local/etc/mitmproxy/mitmproxy-ca.p12",
 		}
 		for _, path := range possiblePaths {
 			if _, err := os.Stat(path); err == nil {
@@ -993,9 +993,9 @@ func mitmproxy(port int, streamLargeBodies int, conf *config.Config) {
 	case "linux":
 		// Linux系统下检查多个可能的位置
 		possiblePaths := []string{
-			os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca-cert.pem"),
-			"/etc/mitmproxy/mitmproxy-ca-cert.pem",
-			"/usr/local/etc/mitmproxy/mitmproxy-ca-cert.pem",
+			os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca.p12"),
+			"/etc/mitmproxy/mitmproxy-ca.p12",
+			"/usr/local/etc/mitmproxy/mitmproxy-ca.p12",
 		}
 		for _, path := range possiblePaths {
 			if _, err := os.Stat(path); err == nil {
@@ -1008,7 +1008,7 @@ func mitmproxy(port int, streamLargeBodies int, conf *config.Config) {
 		}
 	default:
 		// 其他系统使用默认路径
-		certPath = os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca-cert.pem")
+		certPath = os.ExpandEnv("${HOME}/.mitmproxy/mitmproxy-ca.p12")
 	}
 
 	if _, err := os.Stat(certPath); err != nil {

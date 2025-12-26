@@ -1,13 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
-	"bytes"
 	"fmt"
 	"io"
 	"math"
+	"mime"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -16,20 +18,18 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
-	"mime"
-	"net/url"
+	"yuequanScan/AICheck"
 
 	"github.com/klauspost/pgzip"
-	"yuequanScan/AIAPIS"
 	"yuequanScan/config"
 	"yuequanScan/similarity"
 	"yuequanScan/utils"
 
 	"github.com/lqqyt2423/go-mitmproxy/proxy"
-	"golang.org/x/text/encoding/simplifiedchinese"
-	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/encoding/korean"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/encoding/traditionalchinese"
 )
 
 var hexDataPreview string
@@ -176,8 +176,12 @@ func ScanImpl() {
 	defer statsTicker.Stop()
 
 	// 主循环
+	utils.Info("[扫描服务] 开始主循环，等待请求...")
 	for {
 		select {
+		case <-stopChan:
+			utils.Info("[扫描服务] 收到停止信号，退出主循环")
+			return
 		case <-completedTicker.C:
 			// 处理完成的请求
 			currentlyProcessingCount = 0
@@ -204,6 +208,8 @@ func ScanImpl() {
 				totalRequests++
 				return true
 			})
+
+			// 持续运行，无请求时仅记录日志
 
 			processedPerMinute := float64(processedCount) / duration
 			skippedPerMinute := float64(skippedCount) / duration
@@ -494,7 +500,7 @@ func detectUnauthorizedAccess(r *RequestResponseLog) (*Result, error) {
 				sensitivePatterns[pattern.Name] = pattern.Pattern
 			}
 			vulnResult.SensitiveData = detectSensitiveDataWithDetails(string(processedBody), sensitivePatterns)
-			
+
 			if len(vulnResult.SensitiveData) > 0 {
 				utils.Info("[未授权检测] 发现敏感数据: %d 处", len(vulnResult.SensitiveData))
 			}
@@ -549,7 +555,7 @@ func processResponseBody(body []byte, contentType string) ([]byte, error) {
 	}
 
 	utils.Debug("[响应处理] 开始处理响应体，原始长度=%d字节, Content-Type=%s", len(body), contentType)
-	
+
 	// 记录原始数据的前32字节（十六进制）用于调试
 	hexPreview := ""
 	for i := 0; i < min(len(body), 32); i++ {
@@ -578,8 +584,8 @@ func processResponseBody(body []byte, contentType string) ([]byte, error) {
 
 	// 2. 检查并移除 BOM
 	if len(body) >= 3 && body[0] == 0xEF && body[1] == 0xBB && body[2] == 0xBF {
-			utils.Debug("[响应处理] 检测到并移除 UTF-8 BOM")
-			body = body[3:]
+		utils.Debug("[响应处理] 检测到并移除 UTF-8 BOM")
+		body = body[3:]
 	}
 
 	// 3. 检查是否已经是有效的 UTF-8
@@ -1853,7 +1859,6 @@ func processHighPriorityRequests() {
 						if len(unauthorizedResult.SensitiveData) > 0 && unauthorizedResult.Result == "true" {
 							utils.Warning("[漏洞确认] 未授权检测发现敏感数据，无论结果状态，优先处理为未授权漏洞: %s", r.Request.URL.String())
 
-							
 							unauthorizedResult.Reason = "包含敏感数据的未授权访问: " + unauthorizedResult.Reason
 
 							// 添加扫描时间
@@ -2501,7 +2506,7 @@ func detectPrivilegeEscalation(r *RequestResponseLog) (*Result, error) {
 				sensitivePatterns[pattern.Name] = pattern.Pattern
 			}
 			vulnResult.SensitiveData = detectSensitiveDataWithDetails(string(processedBody), sensitivePatterns)
-			
+
 			if len(vulnResult.SensitiveData) > 0 {
 				utils.Info("[越权检测] 发现敏感数据: %d 处", len(vulnResult.SensitiveData))
 			}
@@ -2528,7 +2533,7 @@ func detectPrivilegeEscalation(r *RequestResponseLog) (*Result, error) {
 				vulnResult.Result = "false"
 				vulnResult.Reason = fmt.Sprintf("%s", reason)
 			} else {
-				 // 计算响应相似度
+				// 计算响应相似度
 				similarityScore, reason, vulnStatus := calculateAIResponseSimilarity(
 					vulnResult.RespBodyA,
 					string(processedBody),
@@ -2537,7 +2542,7 @@ func detectPrivilegeEscalation(r *RequestResponseLog) (*Result, error) {
 				)
 
 				vulnResult.Result = strconv.FormatBool(vulnStatus)
-				vulnResult.Reason = fmt.Sprintf("【复测--->相似度：%.2f】%s ",similarityScore,reason)
+				vulnResult.Reason = fmt.Sprintf("【复测--->相似度：%.2f】%s ", similarityScore, reason)
 			}
 		} else {
 			vulnResult.Result = "false"
@@ -2576,7 +2581,7 @@ func calculateAIResponseSimilarity(respA, respB string, reqA string, respBStatus
 	similarityScore := similarity.CalculateSimilarity(respA, respB)
 	utils.Debug("[AI相似度计算] 字符级别相似度计算结果: %.4f", similarityScore)
 	utils.Debug("[AI相似度计算] 响应A长度: %d 字符, 响应B长度: %d 字符", len(respA), len(respB))
-	
+
 	// 如果相似度较低，提供更多调试信息
 	if similarityScore < 0.5 {
 		utils.Info("[AI相似度计算] 检测到显著差异，相似度: %.4f (< 0.5)", similarityScore)
@@ -2609,11 +2614,11 @@ func calculateAIResponseSimilarity(respA, respB string, reqA string, respBStatus
 
 	// AI没开的时候做个备用
 	if similarityScore >= conf.PrivilegeEscalationScan.SimilarityThreshold {
-		return similarityScore, fmt.Sprintf("响应相似度较高 (%.2f >= %.2f)", 
+		return similarityScore, fmt.Sprintf("响应相似度较高 (%.2f >= %.2f)",
 			similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold), true
 	}
 
-	return similarityScore, fmt.Sprintf("响应相似度较低 (%.2f < %.2f)", 
+	return similarityScore, fmt.Sprintf("响应相似度较低 (%.2f < %.2f)",
 		similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold), false
 }
 
@@ -2636,7 +2641,7 @@ func calculateResponseSimilarity(respA, respB string, reqA string, respBStatus i
 	similarityScore := similarity.CalculateSimilarity(respA, respB)
 	utils.Debug("[标准相似度计算] 字符级别相似度计算结果: %.4f", similarityScore)
 	utils.Debug("[标准相似度计算] 响应A长度: %d 字符, 响应B长度: %d 字符", len(respA), len(respB))
-	
+
 	// 如果相似度较低，提供更多调试信息
 	if similarityScore < 0.5 {
 		utils.Info("[标准相似度计算] 检测到显著差异，相似度: %.4f (< 0.5)", similarityScore)
@@ -2668,13 +2673,14 @@ func calculateResponseSimilarity(respA, respB string, reqA string, respBStatus i
 
 	// 返回原始相似度结果
 	if similarityScore >= conf.PrivilegeEscalationScan.SimilarityThreshold {
-		return similarityScore, fmt.Sprintf("响应相似度较高 (%.2f >= %.2f)", 
+		return similarityScore, fmt.Sprintf("响应相似度较高 (%.2f >= %.2f)",
 			similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold), true
 	}
 
-	return similarityScore, fmt.Sprintf("响应相似度较低 (%.2f < %.2f)", 
+	return similarityScore, fmt.Sprintf("响应相似度较低 (%.2f < %.2f)",
 		similarityScore, conf.PrivilegeEscalationScan.SimilarityThreshold), false
 }
+
 // hasSensitiveData 检查响应中是否包含敏感数据
 func hasSensitiveData(response string) bool {
 	conf := config.GetConfig()
@@ -2716,19 +2722,19 @@ func formatRequest(req interface{}) string {
 			r.Method,
 			fullURL,
 			r.Proto)
-		
+
 		// 创建一个新的Header来包含hostname
 		headers := r.Header.Clone()
 		if r.URL.Host != "" {
 			headers.Set("Host", r.URL.Host)
 		}
-		
+
 		// 添加请求头
 		headersStr := formatHeaders(headers)
-		
+
 		// 完整的请求
 		fullRequest := requestLine + "\n" + headersStr
-		
+
 		// 如果是POST/PUT/PATCH等方法，尝试读取并显示请求体
 		if r.Body != nil && (r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH") {
 			// 读取请求体
@@ -2742,9 +2748,9 @@ func formatRequest(req interface{}) string {
 				fullRequest += "\n\n" + string(bodyBytes)
 			}
 		}
-		
+
 		return fullRequest
-		
+
 	case *proxy.Request:
 		if r == nil {
 			return ""
@@ -2762,12 +2768,12 @@ func formatRequest(req interface{}) string {
 				path = r.URL.String()
 			}
 		}
-		
+
 		requestLine := fmt.Sprintf("%s %s %s",
 			r.Method,
 			path,
 			r.Proto)
-		
+
 		// 创建一个新的Header来包含hostname
 		headers := r.Header.Clone()
 		if r.URL != nil {
@@ -2776,20 +2782,20 @@ func formatRequest(req interface{}) string {
 				headers.Set("Host", parsedURL.Host)
 			}
 		}
-		
+
 		// 添加请求头
 		headersStr := formatHeaders(headers)
-		
+
 		// 完整的请求
 		fullRequest := requestLine + "\n" + headersStr
-		
+
 		// 如果是POST/PUT/PATCH等方法，显示请求体
 		if r.Body != nil && (r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH") {
 			fullRequest += "\n\n" + string(r.Body)
 		}
-		
+
 		return fullRequest
-		
+
 	default:
 		return ""
 	}
@@ -2851,8 +2857,8 @@ func readAndProcessResponseBody(resp *http.Response) ([]byte, error) {
 		utils.Warning("[响应处理] 检测到br压缩，目前不支持br解压，将使用原始数据")
 		decompressedBody = respBody
 	case "zstd":
-			utils.Warning("[响应处理] 检测到zstd压缩，目前不支持zstd解压，将使用原始数据")
-			decompressedBody = respBody
+		utils.Warning("[响应处理] 检测到zstd压缩，目前不支持zstd解压，将使用原始数据")
+		decompressedBody = respBody
 	case "deflate":
 		utils.Warning("[响应处理] 检测到deflate压缩，目前使用原始数据处理")
 		decompressedBody = respBody
@@ -2870,7 +2876,7 @@ func readAndProcessResponseBody(resp *http.Response) ([]byte, error) {
 	// 4. 处理字符集
 	charset := extractCharset(contentType)
 	utils.Debug("[响应处理] 检测到字符集: %s", charset)
-	
+
 	// 如果已经是有效的UTF-8，直接返回
 	if utf8.Valid(decompressedBody) {
 		utils.Debug("[响应处理] 响应体是有效的UTF-8编码")
@@ -2897,7 +2903,7 @@ func readAndProcessResponseBody(resp *http.Response) ([]byte, error) {
 				}
 			}
 		}
-		
+
 		// 如果所有编码都失败了，使用原始数据
 		if decodedBody == nil {
 			utils.Warning("[响应处理] 所有编码转换都失败，使用原始数据")
@@ -2967,7 +2973,7 @@ func tryDecodeBody(body []byte, charset string) ([]byte, error) {
 	// 尝试常见编码
 	var decodedBody []byte
 	var err error
-	
+
 	// 规范化字符集名称
 	charset = strings.ToLower(charset)
 	charset = strings.ReplaceAll(charset, "-", "")
@@ -2982,7 +2988,7 @@ func tryDecodeBody(body []byte, charset string) ([]byte, error) {
 			return decodedBody, nil
 		}
 		utils.Warning("[编码转换] GBK解码失败: %v", err)
-		
+
 		// 尝试GB18030
 		if decodedBody, err = simplifiedchinese.GB18030.NewDecoder().Bytes(body); err == nil {
 			utils.Debug("[编码转换] GB18030解码成功")
@@ -3037,7 +3043,7 @@ func tryDecodeBody(body []byte, charset string) ([]byte, error) {
 	// 如果指定的编码转换失败，尝试自动检测
 	if !utf8.Valid(body) {
 		utils.Debug("[编码转换] 尝试自动检测编码")
-		
+
 		// 尝试检测中文编码
 		if isGBK(body) {
 			utils.Debug("[编码转换] 检测到可能是GBK编码，尝试转换")
@@ -3046,7 +3052,7 @@ func tryDecodeBody(body []byte, charset string) ([]byte, error) {
 				return decodedBody, nil
 			}
 		}
-		
+
 		// 可以添加更多的编码检测逻辑
 	}
 
@@ -3100,11 +3106,11 @@ func AIAnalyzeResponse(reqA, respA, respB string, respBStatus int, similaritySco
 	// 获取模型名称
 	modelName := conf.AIMODEL
 	if modelName == "" {
-		modelName = aiapis.GetModelNameByAIType(aiType)
+		modelName = AICheck.GetModelNameByAIType(aiType)
 	}
 
 	// 调用AI分析
-	aiResult, err := aiapis.AIScan(
+	aiResult, err := AICheck.AIScan(
 		modelName,
 		apiUrl,
 		apiKey,

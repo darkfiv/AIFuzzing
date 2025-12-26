@@ -141,28 +141,18 @@ GOOS=darwin GOARCH=arm64 go build -o AIFuzzing_macos_arm64
 GOOS=linux GOARCH=amd64 go build -o AIFuzzing_linux_amd64
 ```
 
-4. **运行项目**
-```bash
-# 使用默认配置
-./AIFuzzing
+4. **运行项目【确保已经安装好了mitmproxy证书】**
 
-# 指定配置文件
-./AIFuzzing -config my-config.json
+### 安装证书步骤
+#### 1、查看~/.mitmproxy/目录下是否包含这个证书
+C:\Users\darkfive\\.mitmproxy #darkfive替换成自己的用户名
+![fccef4bdab7f67c861b9355737d57aaabad2d7a4_knock_capture_image](https://github.com/user-attachments/assets/3ce88aa0-7643-4b93-aa0e-181cfbf362da)
 
-# 指定端口
-./AIFuzzing -port 9090
+#### 2、不包含的话删除掉~/.mitmproxy/目录下所有文件，重新生成证书：
 ```
-
-#### 开发模式运行
-```bash
-# 启用调试日志
-./AIFuzzing -log debug
-
-# 启用文件日志
-./AIFuzzing -logFile
-
-# 禁用Web界面（仅代理模式）
-./AIFuzzing -disableWebUI
+① python -m pip install mitmdump
+② mitmdump
+③ 将~/.mitmproxy/目录下生成的mitmproxy-ca.p12证书导入到受信任的根证书颁发机构 【安装到当前用户】
 ```
 
 ## 🛠️ 开发指南
@@ -322,8 +312,9 @@ AIFuzzing.exe
 - 💡 [功能建议](https://github.com/darkfiv/AIFuzzing/issues/new?template=feature_request.md)
 
 ### 技术交流群
-有什么问题可以进群问
-![微信图片_20251008215013](https://github.com/user-attachments/assets/b2265511-87f7-4a6b-98b0-ca670006a730)
+有什么问题可以进群问，二维码过期可以加我微信 a2523617635
+![1fea405919b6820f206d9e7eb79b0b93](https://github.com/user-attachments/assets/0196f776-1d91-42cb-bfdd-f4219d893648)
+
 
 
 
